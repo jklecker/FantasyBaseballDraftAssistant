@@ -1,49 +1,133 @@
 package com.example.fantasybaseball.controller;
 
-import com.example.fantasybaseball.dto.KeeperDTO;
+import com.example.fantasybaseball.dto.InitializeDraftRequest;
 import com.example.fantasybaseball.dto.KeeperRequest;
 import com.example.fantasybaseball.model.DraftState;
 import com.example.fantasybaseball.model.Player;
+import com.example.fantasybaseball.model.Team;
 import com.example.fantasybaseball.model.TeamStats;
 import com.example.fantasybaseball.service.DraftService;
 import com.example.fantasybaseball.service.PlayerPoolService;
 import com.example.fantasybaseball.service.ScoringService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/draft")
 public class DraftController {
+
     @Autowired
     private DraftService draftService;
+
     @Autowired
     private PlayerPoolService playerPoolService;
+
     @Autowired
     private ScoringService scoringService;
 
-    @PostMapping("/pick")
-    public void pick(@RequestParam int playerId, @RequestParam int teamId) {
-        draftService.makePick(playerId, teamId);
+    /**
+     * Initialize the draft with a list of team names and snake-order flag.
+     * Example body:
+     * { "teamNames": ["Team A","Team B",...], "snakeOrder": true }
+     */
+    @PostMapping("/initialize")
+    public ResponseEntity<DraftState> initialize(@RequestBody InitializeDraftRequest request) {
+        List<Player> players = playerPoolService.getAllPlayers();
+        List<Team> teams = new ArrayList<>();
+        for (int i = 0; i < request.getTeamNames().size(); i++) {
+            Team t = new Team();
+            t.setId(i + 1);
+            t.setName(request.getTeamNames().get(i));
+            teams.add(t);
+        }
+        draftService.initializeDraft(teams, players, request.isSnakeOrder());
+        return ResponseEntity.ok(draftService.getDraftState());
     }
 
+    /**
+     * Submit the next pick in draft order (snake order auto-determines which team).
+     * The currently picking team is derived from round + pick number.
+     */
+    @PostMapping("/pick")
+    public ResponseEntity<Map<String, Object>> pick(@RequestParam int playerId) {
+        requireInitialized();
+        try {
+            Team team = draftService.makePick(playerId);
+            DraftState state = draftService.getDraftState();
+            return ResponseEntity.ok(Map.of(
+                    "pickedByTeam", team.getName(),
+                    "round", state.getRound(),
+                    "nextPick", state.getCurrentPick()
+            ));
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
+    }
+
+    /**
+     * Get top 5 recommendations for a specific team, factoring in that team's
+     * current roster stats for category-need adjustments.
+     */
     @GetMapping("/recommendations")
     public List<Player> recommendations(@RequestParam int teamId) {
+        requireInitialized();
         DraftState state = draftService.getDraftState();
-        TeamStats stats = new TeamStats(); // Should aggregate from team roster
-        List<Player> available = state.getAvailablePlayers();
-        return scoringService.recommendPlayers(available, stats, state.getTeams().size());
+
+        Team team = state.getTeams().stream()
+                .filter(t -> t.getId() == teamId)
+                .findFirst()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "Team " + teamId + " not found"));
+
+        TeamStats stats = TeamStats.fromTeam(team);
+        return scoringService.recommendPlayers(state.getAvailablePlayers(), stats);
     }
 
+    /**
+     * Returns full draft state: round, current pick, all rosters, available players.
+     */
     @GetMapping("/state")
-    public DraftState state() {
-        return draftService.getDraftState();
+    public ResponseEntity<DraftState> state() {
+        requireInitialized();
+        return ResponseEntity.ok(draftService.getDraftState());
     }
 
+    /**
+     * Returns the team currently on the clock.
+     */
+    @GetMapping("/current-team")
+    public ResponseEntity<Team> currentTeam() {
+        requireInitialized();
+        return ResponseEntity.ok(draftService.getCurrentPickingTeam());
+    }
+
+    /**
+     * Load keepers before the draft. Each keeper is removed from the pool
+     * and placed on the team's roster. Example body:
+     * { "keepers": [{"teamName":"Team A","playerId":1,"round":2},...] }
+     */
     @PostMapping("/load-keepers")
-    public void loadKeepers(@RequestBody KeeperRequest request) {
-        draftService.loadKeepers(request.getKeepers());
+    public ResponseEntity<DraftState> loadKeepers(@RequestBody KeeperRequest request) {
+        requireInitialized();
+        try {
+            draftService.loadKeepers(request.getKeepers());
+        } catch (IllegalStateException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
+        return ResponseEntity.ok(draftService.getDraftState());
+    }
+
+    private void requireInitialized() {
+        if (!draftService.isDraftInitialized()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Draft not initialized. POST /draft/initialize first.");
+        }
     }
 }
-

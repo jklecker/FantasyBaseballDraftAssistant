@@ -5,11 +5,8 @@ build/
 !**/src/test/**/build/
 .kotlin
 
-### IntelliJ IDEA ###
-.idea/modules.xml
-.idea/jarRepositories.xml
-.idea/compiler.xml
-.idea/libraries/
+### IntelliJ IDEA - exclude entire .idea folder and all module files ###
+.idea/
 *.iws
 *.iml
 *.ipr
