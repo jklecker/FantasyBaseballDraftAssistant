@@ -17,7 +17,7 @@ or # Owner Notes — Fantasy Baseball Draft Assistant
 ## How the hosted version works
 
 The `Dockerfile` does a 3-stage build:
-1. **Node 18** builds the React frontend into static files
+1. **Node 20** builds the React frontend into static files using the committed lockfile
 2. **Gradle** bakes those static files into the Spring Boot JAR so everything runs on a single port
 3. A **tiny JRE image** runs the JAR
 
@@ -60,6 +60,8 @@ git push
 6. Click **Create Web Service** and wait ~5 minutes for the first build.
 
 That's it. Your live URL will show on the Render dashboard once it's up.
+
+> If a deploy fails with an npm / `ajv-keywords` error, use **Manual Deploy → Clear build cache & deploy** once after pushing the latest commit. That forces Render to reinstall from the new `frontend/package-lock.json`.
 
 ### Step 3 — Share the URL
 

@@ -13,7 +13,7 @@ Install these once on any PC you want to run the app on:
 |------|-------------|---------|
 | **Git** | any | https://git-scm.com/downloads |
 | **Java JDK** | 17 | https://adoptium.net (grab the LTS installer) |
-| **Node.js** | 18 | https://nodejs.org (LTS version) |
+| **Node.js** | 20 | https://nodejs.org (LTS version) |
 
 > Gradle is **bundled** — no separate install needed.  
 > After installing Java and Node, close and reopen any terminal so the new PATH takes effect.
@@ -29,7 +29,7 @@ cd FantasyBaseballDraftAssistant
 
 # 2. Install frontend dependencies (one-time only)
 cd frontend
-npm install
+npm ci
 cd ..
 ```
 
@@ -138,8 +138,13 @@ If the API is unreachable the app falls back to the bundled `src/main/resources/
 
 # Frontend
 cd frontend
+npm ci
 npm test -- --watchAll=false
 ```
+
+## Render / Docker note
+
+The frontend Docker build is pinned to **Node 20** and now uses the committed `frontend/package-lock.json` so Render resolves the same dependency tree as local development. If Render previously cached a bad install, trigger a **Clear build cache & deploy** from the Render dashboard once after pulling the latest commit.
 
 ---
 
@@ -163,5 +168,5 @@ FantasyBaseballDraftAssistant/
     │   └── util/
     └── resources/
         ├── application.properties
-        └── players.csv        ← edit with your projections
+        └── players.csv        ← fallback sample data if MLB API fetch is unavailable
 ```

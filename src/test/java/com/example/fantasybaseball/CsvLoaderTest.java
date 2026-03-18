@@ -18,21 +18,22 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SpringBootTest
 class CsvLoaderTest {
 
+    private static final String SAMPLE_CSV = "test-players.csv";
+
     @Autowired
     private CsvLoader csvLoader;
 
     @Test
-    @DisplayName("loads all rows from players.csv")
+    @DisplayName("loads all rows from the deterministic sample CSV")
     void loadsAllRows() {
-        List<Player> players = csvLoader.loadPlayers("players.csv");
-        // Our sample CSV has 12 data rows
+        List<Player> players = csvLoader.loadPlayers(SAMPLE_CSV);
         assertThat(players).hasSize(12);
     }
 
     @Test
     @DisplayName("player fields are mapped to the correct columns")
     void playerFieldsAreCorrect() {
-        List<Player> players = csvLoader.loadPlayers("players.csv");
+        List<Player> players = csvLoader.loadPlayers(SAMPLE_CSV);
         // Row 1: Mike Trout (id=1)
         Player trout = players.stream().filter(p -> p.getId() == 1).findFirst().orElseThrow();
         assertThat(trout.getName()).isEqualTo("Mike Trout");
@@ -47,7 +48,7 @@ class CsvLoaderTest {
     @Test
     @DisplayName("pitcher stats are mapped correctly")
     void pitcherFieldsAreCorrect() {
-        List<Player> players = csvLoader.loadPlayers("players.csv");
+        List<Player> players = csvLoader.loadPlayers(SAMPLE_CSV);
         // Row 3: Jacob deGrom (id=3)
         Player deGrom = players.stream().filter(p -> p.getId() == 3).findFirst().orElseThrow();
         assertThat(deGrom.getName()).isEqualTo("Jacob deGrom");
@@ -63,10 +64,17 @@ class CsvLoaderTest {
     @Test
     @DisplayName("closer SV column is loaded correctly")
     void closerSavesCorrect() {
-        List<Player> players = csvLoader.loadPlayers("players.csv");
+        List<Player> players = csvLoader.loadPlayers(SAMPLE_CSV);
         // Row 10: Josh Hader (id=10)
         Player hader = players.stream().filter(p -> p.getId() == 10).findFirst().orElseThrow();
         assertThat(hader.getSV()).isEqualTo(35);
+    }
+
+    @Test
+    @DisplayName("bundled fallback players.csv loads at least one player")
+    void bundledFallbackCsvLoads() {
+        List<Player> players = csvLoader.loadPlayers("players.csv");
+        assertThat(players).isNotEmpty();
     }
 
     @Test
@@ -79,7 +87,7 @@ class CsvLoaderTest {
     @Test
     @DisplayName("IDs are unique across all loaded players")
     void idsAreUnique() {
-        List<Player> players = csvLoader.loadPlayers("players.csv");
+        List<Player> players = csvLoader.loadPlayers(SAMPLE_CSV);
         long distinctIds = players.stream().mapToInt(Player::getId).distinct().count();
         assertThat(distinctIds).isEqualTo(players.size());
     }
