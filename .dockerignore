@@ -1,0 +1,10 @@
+# Speeds up Docker builds by excluding files the build stages don't need
+.gradle
+build/
+frontend/node_modules/
+frontend/build/
+.git
+.idea/
+*.iml
+.DS_Store
+

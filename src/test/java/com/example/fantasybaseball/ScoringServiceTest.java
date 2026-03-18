@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -254,6 +255,179 @@ class ScoringServiceTest {
         void emptyPoolReturnsEmpty() {
             List<Player> recs = scoringService.recommendPlayers(List.of(), new TeamStats());
             assertThat(recs).isEmpty();
+        }
+    }
+
+    // ── Late-round upside boost ───────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("Late-round upside boost (round > 10)")
+    class LateRoundUpside {
+
+        @Test
+        @DisplayName("high-ceiling batter scores higher in round 12 than round 5")
+        void highCeilingBatterBoostedInLateRounds() {
+            Player boom = batter(1, 90, 40, 30, 110);
+            double earlyScore = scoringService.scorePlayerAdvanced(boom, new TeamStats(), null, List.of(), 5);
+            double lateScore  = scoringService.scorePlayerAdvanced(boom, new TeamStats(), null, List.of(), 12);
+            assertThat(lateScore).isGreaterThan(earlyScore);
+        }
+
+        @Test
+        @DisplayName("low-ceiling batter gains less late-round boost than high-ceiling one")
+        void lowCeilingBatterGainsLessBoost() {
+            Player boom = batter(1, 90, 40, 30, 110);
+            Player bust = batter(2, 40,  5,  2, 140);
+            double boomBoost = scoringService.scorePlayerAdvanced(boom, new TeamStats(), null, List.of(), 15)
+                             - scoringService.scorePlayerAdvanced(boom, new TeamStats(), null, List.of(), 1);
+            double bustBoost = scoringService.scorePlayerAdvanced(bust, new TeamStats(), null, List.of(), 15)
+                             - scoringService.scorePlayerAdvanced(bust, new TeamStats(), null, List.of(), 1);
+            assertThat(boomBoost).isGreaterThan(bustBoost);
+        }
+
+        @Test
+        @DisplayName("no upside boost applied before round 11")
+        void noUpsideBoostBeforeRound11() {
+            Player p = batter(1, 80, 30, 20, 100);
+            double r1  = scoringService.scorePlayerAdvanced(p, new TeamStats(), null, List.of(), 1);
+            double r10 = scoringService.scorePlayerAdvanced(p, new TeamStats(), null, List.of(), 10);
+            assertThat(r1).isEqualTo(r10);
+        }
+
+        @Test
+        @DisplayName("computeUpside returns higher value for power/speed bat vs contact bat")
+        void upsideHigherForPowerBatter() {
+            Player power   = batter(1, 80, 45, 30, 130);
+            Player contact = batter(2, 75, 5,  3, 40);
+            assertThat(scoringService.computeUpside(power))
+                    .isGreaterThan(scoringService.computeUpside(contact));
+        }
+
+        @Test
+        @DisplayName("pitcher upside rewards high K-rate and saves")
+        void pitcherUpsideRewardsKRate() {
+            Player strikeoutArm = pitcher(1, 180, 12, 6, 0, 220, 40, 3.00, 1.10);
+            Player groundBaller = pitcher(2, 180, 12, 6, 0,  90, 40, 3.00, 1.10);
+            assertThat(scoringService.computeUpside(strikeoutArm))
+                    .isGreaterThan(scoringService.computeUpside(groundBaller));
+        }
+    }
+
+    // ── Positional scarcity & need ────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("Positional scarcity and need")
+    class PositionalScarcity {
+
+        private Team emptyTeam() {
+            Team t = new Team(); t.setId(1); t.setName("My Team"); return t;
+        }
+
+        private Player playerAt(int id, String pos) {
+            Player p = new Player();
+            p.setId(id); p.setName("Player " + id); p.setPosition(pos);
+            // Give all players the same neutral stats so only position drives differences
+            p.setR(50); p.setHR(15); p.setSB(10); p.setH(100);
+            p.setTwoB(20); p.setThreeB(1); p.setRBI(50); p.setBB(30); p.setK(80);
+            p.setIP(0); p.setW(0); p.setL(0); p.setSV(0);
+            p.setPitchingBB(0); p.setPitchingK(0); p.setERA(0); p.setWHIP(0);
+            return p;
+        }
+
+        @Test
+        @DisplayName("no boost when team already has enough of that position")
+        void noBoostWhenPositionFilled() {
+            Team team = emptyTeam();
+            // Already have 3 OFs (requirement met)
+            team.getRoster().add(playerAt(10, "OF"));
+            team.getRoster().add(playerAt(11, "OF"));
+            team.getRoster().add(playerAt(12, "OF"));
+
+            Player extraOf = playerAt(1, "OF");
+            double boost = scoringService.computePositionalScarcityBoost(
+                    extraOf, team, List.of(extraOf));
+            assertThat(boost).isEqualTo(0.0);
+        }
+
+        @Test
+        @DisplayName("boost applied when team needs catcher and catchers remain in pool")
+        void boostWhenCatcherNeeded() {
+            Team team = emptyTeam(); // 0 catchers, need 1
+            Player catcher = playerAt(1, "C");
+            List<Player> pool = List.of(catcher, playerAt(2, "C"), playerAt(3, "C"));
+            double boost = scoringService.computePositionalScarcityBoost(catcher, team, pool);
+            assertThat(boost).isGreaterThan(0.0);
+        }
+
+        @Test
+        @DisplayName("boost is higher when fewer catchers remain in the pool")
+        void boostHigherWhenPositionScarce() {
+            Team team = emptyTeam();
+            Player catcher = playerAt(1, "C");
+            List<Player> manyLeft  = List.of(catcher, playerAt(2,"C"), playerAt(3,"C"),
+                    playerAt(4,"C"), playerAt(5,"C"), playerAt(6,"C"),
+                    playerAt(7,"C"), playerAt(8,"C"), playerAt(9,"C"), playerAt(10,"C"));
+            List<Player> fewLeft   = List.of(catcher, playerAt(2, "C"));
+
+            double boostScarce = scoringService.computePositionalScarcityBoost(catcher, team, fewLeft);
+            double boostPlenty = scoringService.computePositionalScarcityBoost(catcher, team, manyLeft);
+            assertThat(boostScarce).isGreaterThan(boostPlenty);
+        }
+
+        @Test
+        @DisplayName("max boost when player is the last at a needed position")
+        void maxBoostWhenLastAtPosition() {
+            Team team = emptyTeam();
+            Player lastC = playerAt(1, "C");
+            // Only this player in the pool at C (remaining = 0 others)
+            double boost = scoringService.computePositionalScarcityBoost(
+                    lastC, team, List.of(lastC));
+            assertThat(boost).isEqualTo(50.0);
+        }
+
+        @Test
+        @DisplayName("getPositionalDeficits returns all positions for empty roster")
+        void allPositionsNeededForEmptyRoster() {
+            Map<String, Integer> deficits = scoringService.getPositionalDeficits(emptyTeam());
+            assertThat(deficits).containsKeys("C", "1B", "2B", "3B", "SS", "OF", "SP", "RP");
+            assertThat(deficits.get("OF")).isEqualTo(3);
+            assertThat(deficits.get("SP")).isEqualTo(2);
+        }
+
+        @Test
+        @DisplayName("getPositionalDeficits removes a position once requirement is met")
+        void deficitClearedWhenFilled() {
+            Team team = emptyTeam();
+            team.getRoster().add(playerAt(1, "C"));
+            Map<String, Integer> deficits = scoringService.getPositionalDeficits(team);
+            assertThat(deficits).doesNotContainKey("C");
+        }
+
+        @Test
+        @DisplayName("OF deficit decreases as outfielders are added")
+        void ofDeficitDecreasesWithPicks() {
+            Team team = emptyTeam();
+            assertThat(scoringService.getPositionalDeficits(team).get("OF")).isEqualTo(3);
+            team.getRoster().add(playerAt(1, "OF"));
+            assertThat(scoringService.getPositionalDeficits(team).get("OF")).isEqualTo(2);
+            team.getRoster().add(playerAt(2, "OF"));
+            assertThat(scoringService.getPositionalDeficits(team).get("OF")).isEqualTo(1);
+            team.getRoster().add(playerAt(3, "OF"));
+            assertThat(scoringService.getPositionalDeficits(team)).doesNotContainKey("OF");
+        }
+
+        @Test
+        @DisplayName("positional need boost propagates into full advanced score")
+        void positionalNeedAppearsInAdvancedScore() {
+            Team emptyTeam = emptyTeam();
+            Player catcher = playerAt(1, "C");
+            List<Player> pool = List.of(catcher, playerAt(2, "C"));
+
+            double withNeed    = scoringService.scorePlayerAdvanced(
+                    catcher, new TeamStats(), emptyTeam, pool, 1);
+            double withoutNeed = scoringService.scorePlayerAdvanced(
+                    catcher, new TeamStats(), null, pool, 1);
+            assertThat(withNeed).isGreaterThan(withoutNeed);
         }
     }
 }

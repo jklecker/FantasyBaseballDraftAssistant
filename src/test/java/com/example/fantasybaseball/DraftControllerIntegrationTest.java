@@ -269,6 +269,79 @@ class DraftControllerIntegrationTest {
         }
     }
 
+    // ── GET /draft/players (fuzzy search) ────────────────────────────────────
+
+    @Nested
+    @DisplayName("GET /draft/players — fuzzy search")
+    class PlayerSearch {
+
+        @Test
+        @DisplayName("exact substring match returns the player")
+        void exactSubstringMatch() throws Exception {
+            initialize(TWO_TEAMS_JSON);
+            mockMvc.perform(get("/draft/players").param("q", "Trout"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[*].name", hasItem("Mike Trout")));
+        }
+
+        @Test
+        @DisplayName("case-insensitive first-name prefix returns the player")
+        void caseInsensitivePrefixMatch() throws Exception {
+            initialize(TWO_TEAMS_JSON);
+            mockMvc.perform(get("/draft/players").param("q", "mik"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[*].name", hasItem("Mike Trout")));
+        }
+
+        @Test
+        @DisplayName("typo (transposition) still finds the player")
+        void typoMatchReturnsPlayer() throws Exception {
+            initialize(TWO_TEAMS_JSON);
+            // "truot" is one transposition away from "trout"
+            mockMvc.perform(get("/draft/players").param("q", "truot"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[*].name", hasItem("Mike Trout")));
+        }
+
+        @Test
+        @DisplayName("no-match query returns empty list")
+        void noMatchReturnsEmpty() throws Exception {
+            initialize(TWO_TEAMS_JSON);
+            mockMvc.perform(get("/draft/players").param("q", "zzzzzzzz"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.length()", equalTo(0)));
+        }
+
+        @Test
+        @DisplayName("blank query returns all available players")
+        void blankQueryReturnsAll() throws Exception {
+            initialize(TWO_TEAMS_JSON);
+            mockMvc.perform(get("/draft/players"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.length()", greaterThan(0)));
+        }
+
+        @Test
+        @DisplayName("best match appears first (exact substring ranked above prefix)")
+        void bestMatchRankedFirst() throws Exception {
+            initialize(TWO_TEAMS_JSON);
+            // "Judge" is an exact last-name match; results should include Aaron Judge
+            mockMvc.perform(get("/draft/players").param("q", "judge"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0].name").value("Aaron Judge"));
+        }
+
+        @Test
+        @DisplayName("drafted player does not appear in search results")
+        void draftedPlayerNotInSearch() throws Exception {
+            initialize(TWO_TEAMS_JSON);
+            mockMvc.perform(post("/draft/pick").param("playerId", "1"));
+            mockMvc.perform(get("/draft/players").param("q", "Trout"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[*].id", not(hasItem(1))));
+        }
+    }
+
     // ── GET /draft/recommendations ────────────────────────────────────────────
 
     @Nested

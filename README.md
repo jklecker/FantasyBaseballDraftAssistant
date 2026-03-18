@@ -1,37 +1,65 @@
 # Fantasy Baseball Draft Assistant 🏟️
 
-A **Spring Boot + Gradle** local draft assistant for a 12-team, H2H weekly-categories fantasy baseball league. Supports snake draft order, keeper players, live pick tracking, and category-aware player recommendations.
+A **Spring Boot + React** draft assistant for a 12-team, H2H weekly-categories fantasy baseball league.  
+Supports snake draft order, keeper players, live pick tracking, positional scarcity scoring, and category-aware player recommendations.
 
 ---
 
-## Requirements
+## Prerequisites
 
-- Java 17+
-- Gradle 8.5 (wrapper included — no Gradle install needed)
+Install these once on any PC you want to run the app on:
+
+| Tool | Min Version | Download |
+|------|-------------|---------|
+| **Git** | any | https://git-scm.com/downloads |
+| **Java JDK** | 17 | https://adoptium.net (grab the LTS installer) |
+| **Node.js** | 18 | https://nodejs.org (LTS version) |
+
+> Gradle is **bundled** — no separate install needed.  
+> After installing Java and Node, close and reopen any terminal so the new PATH takes effect.
 
 ---
 
-## Quick Start
+## First-time setup
 
-```bash
-# Clone and run
-./gradlew bootRun
+```powershell
+# 1. Clone the repo
+git clone https://github.com/jklecker/FantasyBaseballDraftAssistant.git
+cd FantasyBaseballDraftAssistant
+
+# 2. Install frontend dependencies (one-time only)
+cd frontend
+npm install
+cd ..
 ```
 
-The server starts at **`http://localhost:8080`**.
+---
 
-> **Windows users:** use `gradlew.bat bootRun` or `.\gradlew bootRun` in PowerShell.
+## Running locally
+
+From the project root in PowerShell:
+
+```powershell
+.\start-dev.ps1
+```
+
+This opens **two terminal windows** — one for the backend, one for the frontend:
+
+| | URL |
+|--|-----|
+| Backend (Spring Boot) | http://localhost:8080 |
+| Frontend (React) | http://localhost:3000 |
+
+Open **http://localhost:3000** in your browser.  
+> First boot takes ~30 seconds while Gradle warms up. Subsequent starts are faster.
 
 ---
 
-## Typical Draft Workflow
+## Typical draft workflow
 
-Here is a complete step-by-step example for a 3-team draft using `curl`.  
-Swap the team names and player IDs for your real league.
+### 1 — Initialize the draft
 
-### Step 1 — Initialize the draft
-
-Provide team names in snake-order pick position (position 1 picks first in round 1).
+Send team names in snake-order pick position (first team listed picks first in round 1).
 
 ```bash
 curl -s -X POST http://localhost:8080/draft/initialize \
@@ -42,28 +70,9 @@ curl -s -X POST http://localhost:8080/draft/initialize \
   }'
 ```
 
-**Response:**
-```json
-{
-  "round": 1,
-  "currentPick": 1,
-  "teams": [
-    {"id": 1, "name": "The Lumber Co.", "roster": [], "keepers": []},
-    {"id": 2, "name": "Ace Factory",    "roster": [], "keepers": []},
-    {"id": 3, "name": "Speed Demons",   "roster": [], "keepers": []}
-  ],
-  "availablePlayers": [ ... ],
-  "draftedPlayers": [],
-  "snakeOrder": true
-}
-```
+### 2 — Load keepers (optional)
 
----
-
-### Step 2 — Load keepers (optional)
-
-Each team can have up to 2 keepers. Specify the **round** their keeper slot occupies.
-Keeper players are immediately removed from the available pool.
+Use the **🔒 Keepers** tab in the UI, or curl.  Up to 2 keepers per team; specify the round the keeper slot occupies.
 
 ```bash
 curl -s -X POST http://localhost:8080/draft/load-keepers \
@@ -76,250 +85,83 @@ curl -s -X POST http://localhost:8080/draft/load-keepers \
   }'
 ```
 
-**Response:** updated `DraftState` with keepers reflected on team rosters and removed from the available pool.
+### 3 → N — Draft players
+
+Use the **📋 Draft Board** tab:
+- **On the Clock** shows the current team, round/pick, and which positions they still need.
+- **Recommendations** shows the top 5 players by BPA score + positional urgency. After round 10 upside/ceiling is also weighted.
+- Search any player by name → click **Submit Pick**.
+- **Team Rosters** tracks every team's picks in real time.
 
 ---
 
-### Step 3 — Check who is on the clock
-
-```bash
-curl -s http://localhost:8080/draft/current-team
-```
-
-**Response:**
-```json
-{
-  "id": 1,
-  "name": "The Lumber Co.",
-  "roster": [],
-  "keepers": [{"playerId": 1, "teamId": 1, "round": 2}]
-}
-```
-
----
-
-### Step 4 — Get recommendations for the picking team
-
-```bash
-curl -s "http://localhost:8080/draft/recommendations?teamId=1"
-```
-
-**Response:** top 5 available players ranked by weighted score, adjusted for the team's current category needs.
-
-```json
-[
-  {"id": 6, "name": "Ronald Acuna Jr.", "position": "OF", "R": 120, "HR": 38, "SB": 65, ...},
-  {"id": 4, "name": "Jose Ramirez",     "position": "3B", "R": 95,  "HR": 35, "SB": 20, ...},
-  {"id": 3, "name": "Jacob deGrom",     "position": "SP", "IP": 180, "W": 15, "ERA": 2.10, ...},
-  ...
-]
-```
-
----
-
-### Step 5 — Submit a pick
-
-The system automatically assigns the pick to the team currently on the clock (snake order is handled internally).
-
-```bash
-curl -s -X POST "http://localhost:8080/draft/pick?playerId=6"
-```
-
-**Response:**
-```json
-{
-  "pickedByTeam": "The Lumber Co.",
-  "round": 1,
-  "nextPick": 2
-}
-```
-
-Repeat Steps 3–5 for each pick. After all 3 teams pick in round 1, round 2 automatically reverses order (snake).
-
----
-
-### Step 6 — View full draft state at any time
-
-```bash
-curl -s http://localhost:8080/draft/state
-```
-
-Returns the complete state: current round, pick counter, every team's roster, and remaining available players.
-
----
-
-## API Reference
+## API reference
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/draft/initialize` | Start a new draft with team names & snake-order flag |
-| `POST` | `/draft/load-keepers` | Assign keeper players to teams before drafting |
-| `POST` | `/draft/pick?playerId=` | Submit the next pick (team derived from snake order) |
-| `GET`  | `/draft/current-team` | Get the team currently on the clock |
-| `GET`  | `/draft/recommendations?teamId=` | Top 5 picks for a team based on needs |
-| `GET`  | `/draft/state` | Full draft state dump |
+| `POST` | `/draft/initialize` | Start a draft — team names + snake-order flag |
+| `POST` | `/draft/load-keepers` | Assign keepers before drafting |
+| `POST` | `/draft/pick?playerId=` | Submit the next pick |
+| `GET`  | `/draft/current-team` | Team currently on the clock |
+| `GET`  | `/draft/recommendations?teamId=&round=` | Top 5 picks for a team |
+| `GET`  | `/draft/positional-needs?teamId=` | Positions still needed e.g. `{"C":1,"OF":2}` |
+| `GET`  | `/draft/players?q=` | Search available players by name |
+| `GET`  | `/draft/state` | Full draft state |
 
-### Error responses
+---
 
-All endpoints return `400 Bad Request` if the draft has not been initialized:
-```json
-{
-  "status": 400,
-  "error": "Bad Request",
-  "message": "Draft not initialized. POST /draft/initialize first."
-}
-```
+## Player pool
 
-Picking a player not in the available pool returns `400`:
-```json
-{
-  "status": 400,
-  "error": "Bad Request",
-  "message": "Player 99 not available."
-}
+Player stats are fetched automatically from the **MLB Stats API** (`statsapi.mlb.com`) on startup — no account, no key, no manual download needed.  The app pulls the most recent completed season (configured via `mlb.stats.season` in `application.properties`, default `2025`).
+
+If the API is unreachable the app falls back to the bundled `src/main/resources/players.csv`.  That file contains a small set of sample players and is only there as a safety net.
+
+---
+
+## Scoring model (H2H weekly categories)
+
+**Base weights:** R +1.0, H +0.8, HR +1.5, RBI +1.0, SB +1.2, BB +0.3, K −0.7, IP +0.5, W +1.0, SV +1.5, pK +0.7, L −1.0, pBB −0.5, ERA −2.0 (if IP>0), WHIP −3.0 (if IP>0)
+
+**Team-need bonuses:** SB boost if team SB < 10 · K penalty if team K > 100 · SV boost if team SV = 0 · HR boost if team HR < 10
+
+**Positional scarcity:** players at positions your team still needs get an urgency bonus scaled by how few remain in the pool (up to +50 pts for the last one standing)
+
+**Late-round upside (round 11+):** ceiling score grows linearly each round past 10 — favours high HR/SB batters and high K-rate pitchers
+
+---
+
+## Running tests
+
+```powershell
+# Backend
+.\gradlew.bat test
+
+# Frontend
+cd frontend
+npm test -- --watchAll=false
 ```
 
 ---
 
-## Configuration
-
-`src/main/resources/application.properties`:
-
-```properties
-server.port=8080
-players.csv.path=players.csv        # classpath-relative path to player pool CSV
-spring.thymeleaf.check-template-location=false
-```
-
----
-
-## Player Pool CSV Format
-
-Edit `src/main/resources/players.csv` with your league's projected stats.
-
-**Column order (21 columns, header row required):**
+## Project structure
 
 ```
-id, name, team, position,
-R, H, 2B, 3B, HR, RBI, SB, BB, K,
-IP, W, L, SV, pBB, pK, ERA, WHIP
+FantasyBaseballDraftAssistant/
+├── start-dev.ps1              ← run this to start everything locally
+├── Dockerfile                 ← production build
+├── render.yaml                ← Render deployment config
+├── frontend/
+│   └── src/
+│       ├── App.js
+│       ├── App.test.js
+│       └── index.css
+└── src/main/
+    ├── java/com/example/fantasybaseball/
+    │   ├── controller/
+    │   ├── service/
+    │   ├── model/
+    │   └── util/
+    └── resources/
+        ├── application.properties
+        └── players.csv        ← edit with your projections
 ```
-
-- Batters: fill pitching columns (IP, W, L, SV, pBB, pK, ERA, WHIP) with `0`
-- Pitchers: fill batting columns (R, H, 2B, 3B, HR, RBI, SB, BB, K) with `0`
-
-**Example rows:**
-```csv
-id,name,team,position,R,H,2B,3B,HR,RBI,SB,BB,K,IP,W,L,SV,pBB,pK,ERA,WHIP
-1,Mike Trout,LAA,OF,100,150,30,2,40,100,20,80,120,0,0,0,0,0,0,0.00,0.00
-3,Jacob deGrom,TEX,SP,0,0,0,0,0,0,0,0,0,180,15,5,0,30,200,2.10,0.95
-10,Josh Hader,MIL,RP,0,0,0,0,0,0,0,0,0,60,5,3,35,20,90,2.00,0.85
-```
-
----
-
-## Scoring Model (H2H Weekly Categories)
-
-Base weights applied to every player. Additional team-need bonuses are applied at recommendation time.
-
-### Base Weights
-
-| Category | Direction | Weight |
-|----------|-----------|--------|
-| R | ✅ Good | +1.0× |
-| H | ✅ Good | +0.8× |
-| 2B | ✅ Good | +0.5× |
-| 3B | ✅ Good | +0.7× |
-| HR | ✅ Good | +1.5× |
-| RBI | ✅ Good | +1.0× |
-| SB | ✅ Good | +1.2× |
-| BB (batting) | ✅ Good | +0.3× |
-| **K (batting)** | ❌ Bad | **−0.7×** |
-| IP | ✅ Good | +0.5× |
-| W | ✅ Good | +1.0× |
-| SV | ✅ Good | +1.5× |
-| pK | ✅ Good | +0.7× |
-| **L** | ❌ Bad | **−1.0×** |
-| **pBB** | ❌ Bad | **−0.5×** |
-| **ERA** *(if IP > 0)* | ❌ Bad | **−2.0×** |
-| **WHIP** *(if IP > 0)* | ❌ Bad | **−3.0×** |
-
-### Team-Need Bonuses (applied at recommendation time)
-
-| Condition | Bonus |
-|-----------|-------|
-| Team SB < 10 | +1.5× per SB the player has |
-| Team K > 100 | −0.5× per K the player has |
-| Team SV = 0 | +1.0× per SV the player has |
-| Team HR < 10 | +0.5× per HR the player has |
-
----
-
-## Running Tests
-
-```bash
-./gradlew test
-```
-
-Test report is generated at `build/reports/tests/test/index.html`.
-
-### Test Coverage
-
-| Test Class | What It Tests |
-|------------|--------------|
-| `DraftServiceTest` | Snake order, round advancement, keeper loading, invalid picks, non-snake draft |
-| `ScoringServiceTest` | Batter/pitcher scoring, team-need adjustments, recommendation ordering |
-| `CsvLoaderTest` | CSV parsing, malformed row handling |
-| `DraftControllerIntegrationTest` | All REST endpoints via MockMvc, error responses, full draft flow |
-
----
-
-## Project Structure
-
-```
-src/
-├── main/
-│   ├── java/com/example/fantasybaseball/
-│   │   ├── FantasyBaseballDraftAssistantApplication.java
-│   │   ├── controller/
-│   │   │   └── DraftController.java
-│   │   ├── dto/
-│   │   │   ├── InitializeDraftRequest.java
-│   │   │   ├── KeeperDTO.java
-│   │   │   ├── KeeperRequest.java
-│   │   │   └── TeamKeeperDTO.java
-│   │   ├── model/
-│   │   │   ├── DraftState.java
-│   │   │   ├── Keeper.java
-│   │   │   ├── Player.java
-│   │   │   ├── Team.java
-│   │   │   └── TeamStats.java
-│   │   ├── service/
-│   │   │   ├── DraftService.java
-│   │   │   ├── PlayerPoolService.java
-│   │   │   └── ScoringService.java
-│   │   └── util/
-│   │       └── CsvLoader.java
-│   └── resources/
-│       ├── application.properties
-│       ├── keepers.json        ← example keeper payload
-│       └── players.csv         ← player pool (edit with your projections)
-└── test/
-    └── java/com/example/fantasybaseball/
-        ├── DraftServiceTest.java
-        ├── ScoringServiceTest.java
-        ├── CsvLoaderTest.java
-        └── DraftControllerIntegrationTest.java
-```
-
----
-
-## Future Expansion Ideas
-
-- Z-score normalization across the full player pool
-- Projections API integration (FanGraphs, Baseball Savant)
-- Auto-draft bot for CPU teams
-- Thymeleaf draft board UI (live view of rosters + recommendations)
-- Positional scarcity scoring
-- Persistent draft state (H2 / PostgreSQL)
-

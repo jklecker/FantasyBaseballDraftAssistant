@@ -9,6 +9,7 @@ import com.example.fantasybaseball.model.TeamStats;
 import com.example.fantasybaseball.service.DraftService;
 import com.example.fantasybaseball.service.PlayerPoolService;
 import com.example.fantasybaseball.service.ScoringService;
+import com.example.fantasybaseball.util.FuzzyMatcher;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -18,6 +19,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/draft")
@@ -72,11 +74,12 @@ public class DraftController {
     }
 
     /**
-     * Get top 5 recommendations for a specific team, factoring in that team's
-     * current roster stats for category-need adjustments.
+     * Get top 5 recommendations for a specific team.
+     * Factors in: BPA category score, team stat needs, positional scarcity, late-round upside.
      */
     @GetMapping("/recommendations")
-    public List<Player> recommendations(@RequestParam int teamId) {
+    public List<Player> recommendations(@RequestParam int teamId,
+                                        @RequestParam(defaultValue = "1") int round) {
         requireInitialized();
         DraftState state = draftService.getDraftState();
 
@@ -87,7 +90,45 @@ public class DraftController {
                         "Team " + teamId + " not found"));
 
         TeamStats stats = TeamStats.fromTeam(team);
-        return scoringService.recommendPlayers(state.getAvailablePlayers(), stats);
+        return scoringService.recommendPlayers(
+                state.getAvailablePlayers(), stats, team, round);
+    }
+
+    /**
+     * Returns which roster positions the team still needs to fill and how many.
+     * e.g. {"C":1, "OF":2, "SP":1}
+     */
+    @GetMapping("/positional-needs")
+    public Map<String, Integer> positionalNeeds(@RequestParam int teamId) {
+        requireInitialized();
+        DraftState state = draftService.getDraftState();
+        Team team = state.getTeams().stream()
+                .filter(t -> t.getId() == teamId)
+                .findFirst()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "Team " + teamId + " not found"));
+        return scoringService.getPositionalDeficits(team);
+    }
+
+    /**
+     * Search available players by name using fuzzy matching.
+     * Supports exact substrings, word prefixes, character subsequences, and
+     * edit-distance typo tolerance (1–2 character errors).
+     * Results are returned sorted by match quality (best first).
+     * If no query is supplied the full available pool is returned.
+     */
+    @GetMapping("/players")
+    public List<Player> searchPlayers(@RequestParam(required = false) String q) {
+        requireInitialized();
+        List<Player> available = draftService.getDraftState().getAvailablePlayers();
+        if (q == null || q.isBlank()) return available;
+        String lower = q.trim().toLowerCase();
+        return available.stream()
+                .map(p -> Map.entry(p, FuzzyMatcher.score(p.getName().toLowerCase(), lower)))
+                .filter(e -> e.getValue() > 0.0)
+                .sorted(Map.Entry.<Player, Double>comparingByValue().reversed())
+                .map(Map.Entry::getKey)
+                .collect(Collectors.toList());
     }
 
     /**

@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: fantasy-baseball-draft-assistant
+    env: docker
+    plan: free
+    branch: main
+    autoDeploy: true
+    dockerfilePath: ./Dockerfile
+
