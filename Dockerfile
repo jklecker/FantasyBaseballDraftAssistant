@@ -2,7 +2,7 @@
 FROM node:20-alpine AS frontend
 WORKDIR /frontend
 COPY frontend/package*.json ./
-RUN npm ci --legacy-peer-deps --silent
+RUN npm install --legacy-peer-deps --no-audit --no-fund
 COPY frontend/src ./src
 COPY frontend/public ./public
 ENV SKIP_PREFLIGHT_CHECK=true
@@ -25,4 +25,3 @@ WORKDIR /app
 COPY --from=backend /app/build/libs/*.jar app.jar
 EXPOSE 8080
 ENTRYPOINT ["java", "-Xmx256m", "-jar", "app.jar"]
-
