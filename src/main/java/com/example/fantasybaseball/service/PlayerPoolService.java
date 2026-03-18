@@ -53,7 +53,15 @@ public class PlayerPoolService {
     @Value("${mlb.stats.season:2025}")
     private int statsSeason;
 
-    private final RestTemplate restTemplate = new RestTemplate();
+    // 5 s connect / 15 s read — prevents the MLB API from blocking Render startup
+    private final RestTemplate restTemplate;
+
+    public PlayerPoolService() {
+        var factory = new org.springframework.http.client.SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(5_000);
+        factory.setReadTimeout(15_000);
+        this.restTemplate = new RestTemplate(factory);
+    }
     private List<Player> playerPool = new ArrayList<>();
 
     @PostConstruct

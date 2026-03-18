@@ -13,8 +13,9 @@ WORKDIR /app
 COPY gradlew gradlew.bat build.gradle.kts settings.gradle.kts ./
 COPY gradle ./gradle
 COPY src ./src
-# Embed the built React app — Spring Boot serves static files from here
-COPY --from=frontend /frontend/build ./src/main/resources/static
+# Copy the Vite build to frontend/build so Gradle's processResources includes it
+# as classpath:/static/ — this avoids Docker layer-cache stale-JAR issues.
+COPY --from=frontend /frontend/build ./frontend/build
 RUN chmod +x ./gradlew && ./gradlew bootJar --no-daemon -x test
 
 # ── Stage 3: minimal runtime image ───────────────────────────────────────────

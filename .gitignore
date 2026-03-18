@@ -49,4 +49,6 @@ frontend/.env.local
 frontend/build/
 frontend/package-lock.json
 
+### Generated — Vite build is copied here by Gradle processResources (do not commit) ###
+src/main/resources/static/
 

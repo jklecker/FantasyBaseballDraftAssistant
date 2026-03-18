@@ -18,7 +18,7 @@ repositories {
 
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web:3.2.4")
-    implementation("org.springframework.boot:spring-boot-starter-thymeleaf:3.2.4") // Optional frontend
+    // Thymeleaf removed — React SPA is served as static resources from /static
     implementation("com.opencsv:opencsv:5.9")
     implementation("com.fasterxml.jackson.core:jackson-databind:2.16.1")
     compileOnly("org.projectlombok:lombok:1.18.30")
@@ -29,6 +29,16 @@ dependencies {
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
+// Bundle the Vite production build into the Spring Boot JAR as static resources.
+// In Docker, the frontend/build dir is populated by Stage 1 before Gradle runs.
+// Locally, run `npm run build` in /frontend first, then `./gradlew bootJar`.
+tasks.named<Copy>("processResources") {
+    from("frontend/build") {
+        into("static")
+    }
+}
+
 tasks.test {
     useJUnitPlatform()
 }
+
