@@ -1,12 +1,10 @@
 # ── Stage 1: build React ──────────────────────────────────────────────────────
-FROM node:16-alpine AS frontend
+FROM node:20-alpine AS frontend
 WORKDIR /frontend
-COPY frontend/package.json frontend/.npmrc ./
-RUN npm install --legacy-peer-deps --no-audit --no-fund
+COPY frontend/package.json frontend/.npmrc frontend/vite.config.js frontend/index.html ./
+RUN npm install --no-audit --no-fund
 COPY frontend/src ./src
 COPY frontend/public ./public
-ENV SKIP_PREFLIGHT_CHECK=true
-ENV GENERATE_SOURCEMAP=false
 RUN npm run build
 
 # ── Stage 2: build Spring Boot JAR ───────────────────────────────────────────
