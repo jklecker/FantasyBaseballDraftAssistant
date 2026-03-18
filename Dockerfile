@@ -2,9 +2,11 @@
 FROM node:20-alpine AS frontend
 WORKDIR /frontend
 COPY frontend/package*.json ./
-RUN npm ci --silent
+RUN npm ci --legacy-peer-deps --silent
 COPY frontend/src ./src
 COPY frontend/public ./public
+ENV SKIP_PREFLIGHT_CHECK=true
+ENV GENERATE_SOURCEMAP=false
 RUN npm run build
 
 # ── Stage 2: build Spring Boot JAR ───────────────────────────────────────────
