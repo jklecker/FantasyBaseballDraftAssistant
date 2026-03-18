@@ -4,7 +4,6 @@ WORKDIR /frontend
 COPY frontend/package.json frontend/.npmrc frontend/vite.config.js frontend/index.html ./
 RUN npm install --no-audit --no-fund
 COPY frontend/src ./src
-COPY frontend/public ./public
 RUN npm run build
 
 # ── Stage 2: build Spring Boot JAR ───────────────────────────────────────────
