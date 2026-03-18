@@ -1,7 +1,7 @@
 # ── Stage 1: build React ──────────────────────────────────────────────────────
 FROM node:20-alpine AS frontend
 WORKDIR /frontend
-COPY frontend/package*.json ./
+COPY frontend/package.json frontend/.npmrc ./
 RUN npm install --legacy-peer-deps --no-audit --no-fund
 COPY frontend/src ./src
 COPY frontend/public ./public
