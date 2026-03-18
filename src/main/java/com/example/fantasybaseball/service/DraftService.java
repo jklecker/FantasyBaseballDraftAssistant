@@ -122,6 +122,32 @@ public class DraftService {
         }
     }
 
+    /**
+     * Submit a pick by player name. Tries exact match first (case-insensitive),
+     * then falls back to partial substring match.
+     */
+    public Team makePickByName(String name) {
+        if (draftState == null) {
+            throw new IllegalStateException("Draft not initialized.");
+        }
+        String lower = name.trim().toLowerCase();
+        Player picked = draftState.getAvailablePlayers().stream()
+                .filter(p -> p.getName().equalsIgnoreCase(name.trim()))
+                .findFirst()
+                .orElseGet(() -> draftState.getAvailablePlayers().stream()
+                        .filter(p -> p.getName().toLowerCase().contains(lower))
+                        .findFirst()
+                        .orElseThrow(() -> new IllegalArgumentException(
+                                "No available player found matching: " + name)));
+
+        Team currentTeam = getCurrentPickingTeam();
+        draftState.getAvailablePlayers().remove(picked);
+        draftState.getDraftedPlayers().add(picked);
+        currentTeam.getRoster().add(picked);
+        advanceDraft();
+        return currentTeam;
+    }
+
     public DraftState getDraftState() {
         return draftState;
     }

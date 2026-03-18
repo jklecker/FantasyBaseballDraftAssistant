@@ -118,25 +118,37 @@ export default function App() {
 
   // ── data fetchers ────────────────────────────────────────────────────────
 
+  // Rebuild the client-side Fuse.js search index from a fresh state snapshot.
+  const buildFuseIndex = (state) => {
+    const players = state?.availablePlayers;
+    if (players && players.length > 0) {
+      fuseRef.current = new Fuse(players, {
+        keys: ['name'],
+        threshold: 0.45,
+        distance: 200,
+        minMatchCharLength: 2,
+        includeScore: true,
+      });
+    } else {
+      fuseRef.current = null;
+    }
+  };
+
   const loadState = useCallback(async () => {
     try {
       const state = await apiFetch('/draft/state');
       setDraftState(state);
-      // Build (or rebuild) the Fuse index right after fetching state so it is
-      // always in sync with the available player pool — no useEffect needed.
-      const players = state?.availablePlayers;
-      if (players && players.length > 0) {
-        fuseRef.current = new Fuse(players, {
-          keys: ['name'],
-          threshold: 0.45,    // 0 = exact, 1 = match anything
-          distance: 200,
-          minMatchCharLength: 2,
-          includeScore: true,
-        });
-      } else {
-        fuseRef.current = null;
-      }
-    } catch (_) {}
+      buildFuseIndex(state);
+    } catch (_) {
+      // Draft not initialized on the backend (e.g. after a Render restart).
+      // Auto-initialize with 12 default teams so the app is immediately usable.
+      try {
+        const state = await apiFetch('/draft/auto-initialize', { method: 'POST' });
+        setDraftState(state);
+        buildFuseIndex(state);
+        setStatusMsg('✅ Draft auto-initialized with 12 teams (Team 1–11 + My Team). Keepers are optional.');
+      } catch (_2) { /* ignore */ }
+    }
   }, []);
 
   const loadCurrentTeam = useCallback(async () => {
@@ -153,6 +165,19 @@ export default function App() {
     catch (_) { setNeeds({}); }
   }, []);
 
+  // Load top-5 recommendations for the user's own team.
+  const loadMyRecs = useCallback(async (teamId, round) => {
+    if (!teamId || !round) return;
+    setRecsLoading(true);
+    try {
+      const data = await apiFetch(`/draft/recommendations?teamId=${teamId}&round=${round}`);
+      setMyRecs(data || []);
+    } catch (_) {
+      setMyRecs([]);
+    }
+    setRecsLoading(false);
+  }, []);
+
   useEffect(() => { loadState(); loadCurrentTeam(); }, [loadState, loadCurrentTeam]);
 
   useEffect(() => {
@@ -161,6 +186,23 @@ export default function App() {
       loadPositionalNeeds(currentTeam.id);
     }
   }, [currentTeam, draftState, loadRecommendations, loadPositionalNeeds]);
+
+  // Auto-detect which team is "My Team" (name === 'My Team' or the last team).
+  useEffect(() => {
+    if (draftState?.teams && !myTeamId) {
+      const found = draftState.teams.find(t => t.name === 'My Team')
+        ?? draftState.teams[draftState.teams.length - 1];
+      if (found) setMyTeamId(found.id);
+    }
+  }, [draftState, myTeamId]);
+
+  // Reload recommendations for My Team whenever the recs tab is visible
+  // or whenever the draft state changes (i.e. a pick was made).
+  useEffect(() => {
+    if (activeTab === 'recs' && myTeamId && draftState?.round) {
+      loadMyRecs(myTeamId, draftState.round);
+    }
+  }, [activeTab, myTeamId, draftState, loadMyRecs]);
 
 
   // ── keep-alive ───────────────────────────────────────────────────────────
@@ -200,17 +242,39 @@ export default function App() {
 
   const handleDraftPick = async () => {
     const playerToPick = selectedPick || pickResults[0];
-    if (!playerToPick) {
-      setErrorMsg(pickSearch.trim() ? `No player found matching "${pickSearch}" — try a different name.` : 'Type a player name first.');
-      return;
-    }
     setErrorMsg('');
     try {
-      const data = await apiFetch(`/draft/pick?playerId=${playerToPick.id}`, { method: 'POST' });
-      setStatusMsg(`✅ ${playerToPick.name} → ${data.pickedByTeam}  (Rd ${data.round})`);
+      let data;
+      if (playerToPick?.id) {
+        // Preferred: use the integer player ID (exact match, fast)
+        data = await apiFetch(`/draft/pick?playerId=${playerToPick.id}`, { method: 'POST' });
+      } else if (pickSearch.trim()) {
+        // Fallback: let the backend fuzzy-match by name
+        data = await apiFetch(
+          `/draft/pick?playerName=${encodeURIComponent(pickSearch.trim())}`,
+          { method: 'POST' }
+        );
+      } else {
+        setErrorMsg('Type a player name first.');
+        return;
+      }
+      setStatusMsg(`✅ ${playerToPick?.name ?? pickSearch} → ${data.pickedByTeam}  (Rd ${data.round})`);
       setSelectedPick(null);
       setPickSearch('');
       setPickResults([]);
+      await loadState();
+      await loadCurrentTeam();
+    } catch (e) {
+      setErrorMsg(`Pick failed: ${e.message}`);
+    }
+  };
+
+  // Pick a player directly from the recommendations tab.
+  const handlePickPlayer = async (player) => {
+    setErrorMsg('');
+    try {
+      const data = await apiFetch(`/draft/pick?playerId=${player.id}`, { method: 'POST' });
+      setStatusMsg(`✅ ${player.name} → ${data.pickedByTeam}  (Rd ${data.round})`);
       await loadState();
       await loadCurrentTeam();
     } catch (e) {
@@ -286,6 +350,7 @@ export default function App() {
       <nav className="tabs" role="tablist">
         {[
           { id: 'draft',   label: '📋 Draft Board' },
+          { id: 'recs',    label: '🎯 My Picks' },
           { id: 'keepers', label: '🔒 Keepers (optional)' },
           { id: 'drafted', label: '📜 Drafted' },
         ].map(({ id, label }) => (
@@ -431,6 +496,101 @@ export default function App() {
                   </div>
                 ))}
               </div>
+            </section>
+          )}
+        </div>
+      )}
+
+      {/* ── MY PICKS / RECOMMENDATIONS TAB ──────────────────────────────── */}
+      {activeTab === 'recs' && (
+        <div className="tab-content" data-testid="recs-tab">
+          {!draftState ? (
+            <p className="hint">Draft not initialized yet.</p>
+          ) : (
+            <section className="card">
+              <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
+                <h3 style={{ margin: 0 }}>🎯 Top Picks for</h3>
+                <select
+                  value={myTeamId || ''}
+                  onChange={e => setMyTeamId(Number(e.target.value))}
+                  style={{ fontSize: '1em', padding: '4px 8px', borderRadius: 6 }}
+                >
+                  {draftState.teams.map(t => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+                <span style={{ color: '#888', fontSize: '0.85em' }}>Round {draftState.round}</span>
+                <button
+                  className="btn-ping"
+                  onClick={() => myTeamId && loadMyRecs(myTeamId, draftState.round)}
+                  disabled={recsLoading}
+                  title="Refresh recommendations"
+                  style={{ marginLeft: 4 }}
+                >
+                  {recsLoading ? '…' : '🔄 Refresh'}
+                </button>
+              </div>
+
+              {/* On-the-clock banner */}
+              {currentTeam && (
+                <div style={{ marginBottom: 14 }}>
+                  {currentTeam.id === myTeamId
+                    ? <div className="banner success" style={{ margin: 0 }}>
+                        ✅ It's YOUR turn! Round {draftState.round} · Pick {draftState.currentPick} — select a player below and click <strong>Draft</strong>.
+                      </div>
+                    : <div className="banner" style={{ margin: 0, background: '#f0f4ff', color: '#555', border: '1px solid #c5d3f5' }}>
+                        ⏳ <strong>{currentTeam.name}</strong> is on the clock (Rd {draftState.round} · Pick {draftState.currentPick}). Plan your next pick below.
+                      </div>
+                  }
+                </div>
+              )}
+
+              {myRecs.length === 0 ? (
+                <p className="hint">
+                  {recsLoading
+                    ? 'Loading recommendations…'
+                    : 'No recommendations yet — select your team above and click 🔄 Refresh.'}
+                </p>
+              ) : (
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Player</th><th>Pos</th><th>MLB</th>
+                      <th>HR</th><th>SB</th><th>R</th><th>RBI</th>
+                      <th>W</th><th>SV</th><th>ERA</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {myRecs.map((p, i) => (
+                      <tr key={p.id}>
+                        <td className="pick-num">#{i + 1}</td>
+                        <td><strong>{p.name}</strong></td>
+                        <td><span className="badge">{p.position}</span></td>
+                        <td>{p.team}</td>
+                        <td>{p.HR > 0 ? p.HR : '—'}</td>
+                        <td>{p.SB > 0 ? p.SB : '—'}</td>
+                        <td>{p.R  > 0 ? p.R  : '—'}</td>
+                        <td>{p.RBI > 0 ? p.RBI : '—'}</td>
+                        <td>{p.W  > 0 ? p.W  : '—'}</td>
+                        <td>{p.SV > 0 ? p.SV : '—'}</td>
+                        <td>{p.IP > 0 ? (p.ERA || 0).toFixed(2) : '—'}</td>
+                        <td>
+                          <button
+                            className="btn-primary"
+                            style={{ padding: '4px 12px', fontSize: '0.85em' }}
+                            onClick={() => handlePickPlayer(p)}
+                            title={`Draft ${p.name}`}
+                          >
+                            Draft
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </section>
           )}
         </div>

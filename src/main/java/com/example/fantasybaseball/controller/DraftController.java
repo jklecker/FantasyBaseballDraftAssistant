@@ -55,13 +55,22 @@ public class DraftController {
 
     /**
      * Submit the next pick in draft order (snake order auto-determines which team).
-     * The currently picking team is derived from round + pick number.
+     * Supply either playerId (integer) OR playerName (string) — name is matched
+     * case-insensitively against the available player pool as a fallback.
      */
     @PostMapping("/pick")
-    public ResponseEntity<Map<String, Object>> pick(@RequestParam int playerId) {
+    public ResponseEntity<Map<String, Object>> pick(
+            @RequestParam(required = false) Integer playerId,
+            @RequestParam(required = false) String playerName) {
         requireInitialized();
+        if (playerId == null && (playerName == null || playerName.isBlank())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Provide either playerId or playerName");
+        }
         try {
-            Team team = draftService.makePick(playerId);
+            Team team = (playerId != null)
+                    ? draftService.makePick(playerId)
+                    : draftService.makePickByName(playerName);
             DraftState state = draftService.getDraftState();
             return ResponseEntity.ok(Map.of(
                     "pickedByTeam", team.getName(),
@@ -71,6 +80,28 @@ public class DraftController {
         } catch (IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         }
+    }
+
+    /**
+     * Auto-initialize the draft with default team names (Team 1–11 + "My Team")
+     * and snake order. If the draft is already initialized this is a no-op and
+     * just returns the current state — safe to call on every page load.
+     */
+    @PostMapping("/auto-initialize")
+    public ResponseEntity<DraftState> autoInitialize(
+            @RequestParam(defaultValue = "12") int numTeams) {
+        if (!draftService.isDraftInitialized()) {
+            List<Player> players = playerPoolService.getAllPlayers();
+            List<Team> teams = new ArrayList<>();
+            for (int i = 1; i <= numTeams; i++) {
+                Team t = new Team();
+                t.setId(i);
+                t.setName(i == numTeams ? "My Team" : "Team " + i);
+                teams.add(t);
+            }
+            draftService.initializeDraft(teams, players, true);
+        }
+        return ResponseEntity.ok(draftService.getDraftState());
     }
 
     /**
