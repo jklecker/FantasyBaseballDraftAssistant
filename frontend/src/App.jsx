@@ -114,7 +114,15 @@ export default function App() {
   const [keeperGrid, setKeeperGrid] = useState(makeKeeperGrid);
 
   // My Picks tab state
-  const [myTeamId, setMyTeamId] = useState(null);
+  const [myTeamId, setMyTeamId] = useState(() => {
+    try {
+      const raw = window.localStorage.getItem('myTeamId');
+      const parsed = raw ? Number(raw) : null;
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+    } catch (_) {
+      return null;
+    }
+  });
   const [myRecs, setMyRecs] = useState([]);
   const [recsLoading, setRecsLoading] = useState(false);
 
@@ -209,6 +217,13 @@ export default function App() {
     }
   }, [activeTab, myTeamId, draftState, loadMyRecs]);
 
+  // Persist "your team" selection so it remains set on refresh.
+  useEffect(() => {
+    if (!myTeamId) return;
+    try {
+      window.localStorage.setItem('myTeamId', String(myTeamId));
+    } catch (_) {}
+  }, [myTeamId]);
 
   // ── keep-alive ───────────────────────────────────────────────────────────
 
@@ -342,6 +357,7 @@ export default function App() {
   const pendingPlayerLabel = !selectedPick && pickResults[0]
     ? `Will pick: ${pickResults[0].name}`
     : null;
+  const myTeam = draftState?.teams?.find(t => t.id === myTeamId) || null;
   const { keepers: draftedKeepers, picks: draftedPicks } = buildDraftBoard(draftState);
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -370,6 +386,24 @@ export default function App() {
           </button>
         ))}
       </nav>
+
+      {draftState?.teams?.length > 0 && (
+        <section className="card" style={{ padding: '12px 16px', marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <strong>Your Team:</strong>
+            <select
+              value={myTeamId || ''}
+              onChange={e => setMyTeamId(Number(e.target.value) || null)}
+              style={{ fontSize: '1em', padding: '4px 8px', borderRadius: 6 }}
+            >
+              {draftState.teams.map(t => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+            {myTeam && <span style={{ color: '#4a5568' }}>Selected: <strong>{myTeam.name}</strong></span>}
+          </div>
+        </section>
+      )}
 
       {statusMsg && <div className="banner success" data-testid="status-msg">{statusMsg}</div>}
       {errorMsg  && <div className="banner error"   data-testid="error-msg">{errorMsg}</div>}
