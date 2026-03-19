@@ -123,7 +123,7 @@ export default function App() {
       return null;
     }
   });
-  const [myRecs, setMyRecs] = useState([]);
+  const [myRecBoard, setMyRecBoard] = useState({ overall: [], pitchers: [], batters: [] });
   const [recsLoading, setRecsLoading] = useState(false);
 
   // Fuse.js index — rebuilt whenever the available player pool changes
@@ -183,10 +183,16 @@ export default function App() {
     if (!teamId || !round) return;
     setRecsLoading(true);
     try {
-      const data = await apiFetch(`/draft/recommendations?teamId=${teamId}&round=${round}`);
-      setMyRecs(data || []);
+      const data = await apiFetch(
+        `/draft/recommendations/board?teamId=${teamId}&round=${round}&overallLimit=15&pitcherLimit=10&batterLimit=10`
+      );
+      setMyRecBoard({
+        overall: data?.overall || [],
+        pitchers: data?.pitchers || [],
+        batters: data?.batters || [],
+      });
     } catch (_) {
-      setMyRecs([]);
+      setMyRecBoard({ overall: [], pitchers: [], batters: [] });
     }
     setRecsLoading(false);
   }, []);
@@ -357,6 +363,13 @@ export default function App() {
   const pendingPlayerLabel = !selectedPick && pickResults[0]
     ? `Will pick: ${pickResults[0].name}`
     : null;
+  const isPitcher = (p) => p && (p.IP > 0 || p.position === 'SP' || p.position === 'RP');
+  const overallProjection = (p) => {
+    if (isPitcher(p)) {
+      return `IP ${Number(p.IP || 0).toFixed(1)} | W ${p.W || 0} | SV ${p.SV || 0} | K ${p.pitchingK || 0} | ERA ${Number(p.ERA || 0).toFixed(2)} | WHIP ${Number(p.WHIP || 0).toFixed(2)}`;
+    }
+    return `R ${p.R || 0} | H ${p.H || 0} | 2B ${p.twoB || 0} | 3B ${p.threeB || 0} | HR ${p.HR || 0} | RBI ${p.RBI || 0} | SB ${p.SB || 0} | BB ${p.BB || 0} | K ${p.K || 0}`;
+  };
   const myTeam = draftState?.teams?.find(t => t.id === myTeamId) || null;
   const { keepers: draftedKeepers, picks: draftedPicks } = buildDraftBoard(draftState);
 
@@ -584,51 +597,98 @@ export default function App() {
                 </div>
               )}
 
-              {myRecs.length === 0 ? (
+              {(myRecBoard.overall.length === 0 && myRecBoard.pitchers.length === 0 && myRecBoard.batters.length === 0) ? (
                 <p className="hint">
                   {recsLoading
                     ? 'Loading recommendations…'
                     : 'No recommendations yet — select your team above and click 🔄 Refresh.'}
                 </p>
               ) : (
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th>Player</th><th>Pos</th><th>MLB</th>
-                      <th>HR</th><th>SB</th><th>R</th><th>RBI</th>
-                      <th>W</th><th>SV</th><th>ERA</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {myRecs.map((p, i) => (
-                      <tr key={p.id}>
-                        <td className="pick-num">#{i + 1}</td>
-                        <td><strong>{p.name}</strong></td>
-                        <td><span className="badge">{p.position}</span></td>
-                        <td>{p.team}</td>
-                        <td>{p.HR > 0 ? p.HR : '—'}</td>
-                        <td>{p.SB > 0 ? p.SB : '—'}</td>
-                        <td>{p.R  > 0 ? p.R  : '—'}</td>
-                        <td>{p.RBI > 0 ? p.RBI : '—'}</td>
-                        <td>{p.W  > 0 ? p.W  : '—'}</td>
-                        <td>{p.SV > 0 ? p.SV : '—'}</td>
-                        <td>{p.IP > 0 ? (p.ERA || 0).toFixed(2) : '—'}</td>
-                        <td>
-                          <button
-                            className="btn-primary"
-                            style={{ padding: '4px 12px', fontSize: '0.85em' }}
-                            onClick={() => handlePickPlayer(p)}
-                            title={`Draft ${p.name}`}
-                          >
-                            Draft
-                          </button>
-                        </td>
+                <>
+                  <h4 style={{ margin: '8px 0' }}>Top 15 Overall</h4>
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>#</th><th>Player</th><th>Pos</th><th>MLB</th><th>Projected Stats</th><th></th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {myRecBoard.overall.map((p, i) => (
+                        <tr key={`overall-${p.id}`}>
+                          <td className="pick-num">#{i + 1}</td>
+                          <td><strong>{p.name}</strong></td>
+                          <td><span className="badge">{p.position}</span></td>
+                          <td>{p.team}</td>
+                          <td style={{ fontSize: '0.85em' }}>{overallProjection(p)}</td>
+                          <td>
+                            <button className="btn-primary" style={{ padding: '4px 12px', fontSize: '0.85em' }} onClick={() => handlePickPlayer(p)}>
+                              Draft
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+
+                  <h4 style={{ margin: '16px 0 8px' }}>Top 10 Pitchers</h4>
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>#</th><th>Player</th><th>Pos</th><th>MLB</th>
+                        <th>IP</th><th>W</th><th>L</th><th>SV</th><th>BB</th><th>K</th><th>ERA</th><th>WHIP</th><th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {myRecBoard.pitchers.map((p, i) => (
+                        <tr key={`pitcher-${p.id}`}>
+                          <td className="pick-num">#{i + 1}</td>
+                          <td><strong>{p.name}</strong></td>
+                          <td><span className="badge">{p.position}</span></td>
+                          <td>{p.team}</td>
+                          <td>{Number(p.IP || 0).toFixed(1)}</td>
+                          <td>{p.W || 0}</td>
+                          <td>{p.L || 0}</td>
+                          <td>{p.SV || 0}</td>
+                          <td>{p.pitchingBB || 0}</td>
+                          <td>{p.pitchingK || 0}</td>
+                          <td>{Number(p.ERA || 0).toFixed(2)}</td>
+                          <td>{Number(p.WHIP || 0).toFixed(2)}</td>
+                          <td><button className="btn-primary" style={{ padding: '4px 12px', fontSize: '0.85em' }} onClick={() => handlePickPlayer(p)}>Draft</button></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+
+                  <h4 style={{ margin: '16px 0 8px' }}>Top 10 Batters</h4>
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>#</th><th>Player</th><th>Pos</th><th>MLB</th>
+                        <th>R</th><th>H</th><th>2B</th><th>3B</th><th>HR</th><th>RBI</th><th>SB</th><th>BB</th><th>K</th><th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {myRecBoard.batters.map((p, i) => (
+                        <tr key={`batter-${p.id}`}>
+                          <td className="pick-num">#{i + 1}</td>
+                          <td><strong>{p.name}</strong></td>
+                          <td><span className="badge">{p.position}</span></td>
+                          <td>{p.team}</td>
+                          <td>{p.R || 0}</td>
+                          <td>{p.H || 0}</td>
+                          <td>{p.twoB || 0}</td>
+                          <td>{p.threeB || 0}</td>
+                          <td>{p.HR || 0}</td>
+                          <td>{p.RBI || 0}</td>
+                          <td>{p.SB || 0}</td>
+                          <td>{p.BB || 0}</td>
+                          <td>{p.K || 0}</td>
+                          <td><button className="btn-primary" style={{ padding: '4px 12px', fontSize: '0.85em' }} onClick={() => handlePickPlayer(p)}>Draft</button></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
               )}
             </section>
           )}

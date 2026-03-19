@@ -126,6 +126,36 @@ public class DraftController {
     }
 
     /**
+     * Expanded recommendation board for draft decisions:
+     * - overall: top N regardless of role
+     * - pitchers: top N SP/RP options
+     * - batters: top N non-pitchers
+     */
+    @GetMapping("/recommendations/board")
+    public Map<String, List<Player>> recommendationBoard(
+            @RequestParam int teamId,
+            @RequestParam(defaultValue = "1") int round,
+            @RequestParam(defaultValue = "15") int overallLimit,
+            @RequestParam(defaultValue = "10") int pitcherLimit,
+            @RequestParam(defaultValue = "10") int batterLimit) {
+        requireInitialized();
+        DraftState state = draftService.getDraftState();
+
+        Team team = state.getTeams().stream()
+                .filter(t -> t.getId() == teamId)
+                .findFirst()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "Team " + teamId + " not found"));
+
+        TeamStats stats = TeamStats.fromTeam(team);
+        return Map.of(
+                "overall", scoringService.recommendPlayers(state.getAvailablePlayers(), stats, team, round, overallLimit),
+                "pitchers", scoringService.recommendPitchers(state.getAvailablePlayers(), stats, team, round, pitcherLimit),
+                "batters", scoringService.recommendBatters(state.getAvailablePlayers(), stats, team, round, batterLimit)
+        );
+    }
+
+    /**
      * Returns which roster positions the team still needs to fill and how many.
      * e.g. {"C":1, "OF":2, "SP":1}
      */

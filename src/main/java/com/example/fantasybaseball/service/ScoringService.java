@@ -162,11 +162,47 @@ public class ScoringService {
      */
     public List<Player> recommendPlayers(List<Player> available, TeamStats teamStats,
                                          Team myTeam, int currentRound) {
+        return recommendPlayers(available, teamStats, myTeam, currentRound, 5);
+    }
+
+    /**
+     * Return top N players by advanced score.
+     */
+    public List<Player> recommendPlayers(List<Player> available, TeamStats teamStats,
+                                         Team myTeam, int currentRound, int limit) {
         return available.stream()
                 .sorted(Comparator.comparingDouble(
                         (Player p) -> scorePlayerAdvanced(p, teamStats, myTeam, available, currentRound)
                 ).reversed())
-                .limit(5)
+                .limit(Math.max(1, limit))
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Return top N pitchers (SP/RP or players with IP > 0).
+     */
+    public List<Player> recommendPitchers(List<Player> available, TeamStats teamStats,
+                                          Team myTeam, int currentRound, int limit) {
+        return available.stream()
+                .filter(p -> p.getIP() > 0 || "SP".equals(p.getPosition()) || "RP".equals(p.getPosition()))
+                .sorted(Comparator.comparingDouble(
+                        (Player p) -> scorePlayerAdvanced(p, teamStats, myTeam, available, currentRound)
+                ).reversed())
+                .limit(Math.max(1, limit))
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Return top N hitters (non-pitchers).
+     */
+    public List<Player> recommendBatters(List<Player> available, TeamStats teamStats,
+                                         Team myTeam, int currentRound, int limit) {
+        return available.stream()
+                .filter(p -> !(p.getIP() > 0 || "SP".equals(p.getPosition()) || "RP".equals(p.getPosition())))
+                .sorted(Comparator.comparingDouble(
+                        (Player p) -> scorePlayerAdvanced(p, teamStats, myTeam, available, currentRound)
+                ).reversed())
+                .limit(Math.max(1, limit))
                 .collect(Collectors.toList());
     }
 
