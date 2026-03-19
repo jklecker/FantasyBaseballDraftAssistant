@@ -329,6 +329,89 @@ describe('Drafted tab', () => {
   });
 });
 
+// ── Projection rendering ─────────────────────────────────────────────────────
+
+describe('Projection rendering', () => {
+  test('Draft Board shows non-zero projected stats when API uses lowercase keys', async () => {
+    const batter = {
+      id: 101, name: 'Lower Batter', position: 'OF', team: 'LAA',
+      r: 90, h: 160, twoB: 30, threeB: 4, hr: 35, rbi: 100, sb: 20, bb: 70, k: 120,
+      ip: 0, w: 0, l: 0, sv: 0, pBB: 0, pK: 0, era: 0, whip: 0,
+    };
+    const pitcher = {
+      id: 102, name: 'Lower Pitcher', position: 'SP', team: 'NYM',
+      r: 0, h: 0, twoB: 0, threeB: 0, hr: 0, rbi: 0, sb: 0, bb: 0, k: 0,
+      ip: 180, w: 14, l: 7, sv: 0, pBB: 50, pK: 220, era: 3.2, whip: 1.08,
+    };
+
+    mockFetch({
+      '/draft/state': {
+        round: 4, currentPick: 3, snakeOrder: true,
+        teams: [{ id: 1, name: 'My Team', roster: [] }],
+      },
+      '/draft/current-team': { id: 1, name: 'My Team', roster: [], keepers: [] },
+      '/draft/recommendations/board': { overall: [batter, pitcher], pitchers: [pitcher], batters: [batter] },
+      '/draft/recommendations': [batter, pitcher],
+      '/draft/positional-needs': {},
+    });
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByText('Lower Batter')).toBeInTheDocument());
+    expect(screen.getByText(/R 90 \| H 160 \| 2B 30 \| 3B 4 \| HR 35 \| RBI 100 \| SB 20 \| BB 70 \| K 120/)).toBeInTheDocument();
+    expect(screen.getByText(/IP 180\.0 \| W 14 \| SV 0 \| K 220 \| ERA 3\.20 \| WHIP 1\.08/)).toBeInTheDocument();
+  });
+
+  test('My Picks tables render batter and pitcher projected stats correctly', async () => {
+    const batter = {
+      id: 201, name: 'Board Batter', position: 'OF', team: 'SEA',
+      r: 88, h: 155, twoB: 28, threeB: 3, hr: 32, rbi: 95, sb: 18, bb: 65, k: 115,
+      ip: 0, w: 0, l: 0, sv: 0, pBB: 0, pK: 0, era: 0, whip: 0,
+    };
+    const pitcher = {
+      id: 202, name: 'Board Pitcher', position: 'SP', team: 'ATL',
+      r: 0, h: 0, twoB: 0, threeB: 0, hr: 0, rbi: 0, sb: 0, bb: 0, k: 0,
+      ip: 172.2, w: 13, l: 8, sv: 0, pBB: 48, pK: 205, era: 3.45, whip: 1.12,
+    };
+
+    mockFetch({
+      '/draft/state': {
+        round: 6, currentPick: 2, snakeOrder: true,
+        teams: [{ id: 1, name: 'My Team', roster: [] }],
+      },
+      '/draft/current-team': { id: 1, name: 'My Team', roster: [], keepers: [] },
+      '/draft/recommendations/board': { overall: [batter, pitcher], pitchers: [pitcher], batters: [batter] },
+      '/draft/recommendations': [batter, pitcher],
+      '/draft/positional-needs': {},
+    });
+
+    render(<App />);
+    fireEvent.click(screen.getByRole('tab', { name: /My Picks/i }));
+
+    await waitFor(() => expect(screen.getAllByText('Board Batter').length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText('Board Pitcher').length).toBeGreaterThan(0));
+
+    const batterRow = screen.getAllByText('Board Batter')[1].closest('tr');
+    const pitcherRow = screen.getAllByText('Board Pitcher')[1].closest('tr');
+
+    expect(within(batterRow).getByText('88')).toBeInTheDocument();
+    expect(within(batterRow).getByText('155')).toBeInTheDocument();
+    expect(within(batterRow).getByText('28')).toBeInTheDocument();
+    expect(within(batterRow).getByText('3')).toBeInTheDocument();
+    expect(within(batterRow).getByText('32')).toBeInTheDocument();
+    expect(within(batterRow).getByText('95')).toBeInTheDocument();
+    expect(within(batterRow).getByText('18')).toBeInTheDocument();
+    expect(within(batterRow).getByText('65')).toBeInTheDocument();
+    expect(within(batterRow).getByText('115')).toBeInTheDocument();
+
+    expect(within(pitcherRow).getByText('172.2')).toBeInTheDocument();
+    expect(within(pitcherRow).getByText('13')).toBeInTheDocument();
+    expect(within(pitcherRow).getByText('8')).toBeInTheDocument();
+    expect(within(pitcherRow).getByText('48')).toBeInTheDocument();
+    expect(within(pitcherRow).getByText('205')).toBeInTheDocument();
+  });
+});
+
 // ── Keep-alive bar ────────────────────────────────────────────────────────────
 
 describe('Keep-alive bar', () => {

@@ -374,12 +374,21 @@ export default function App() {
   const pendingPlayerLabel = !selectedPick && pickResults[0]
     ? `Will pick: ${pickResults[0].name}`
     : null;
-  const isPitcher = (p) => p && (p.IP > 0 || p.position === 'SP' || p.position === 'RP');
+  const stat = (p, ...keys) => {
+    if (!p) return 0;
+    for (const k of keys) {
+      const v = p[k];
+      if (v !== undefined && v !== null) return v;
+    }
+    return 0;
+  };
+
+  const isPitcher = (p) => p && (Number(stat(p, 'IP', 'ip')) > 0 || p.position === 'SP' || p.position === 'RP');
   const overallProjection = (p) => {
     if (isPitcher(p)) {
-      return `IP ${Number(p.IP || 0).toFixed(1)} | W ${p.W || 0} | SV ${p.SV || 0} | K ${p.pitchingK || 0} | ERA ${Number(p.ERA || 0).toFixed(2)} | WHIP ${Number(p.WHIP || 0).toFixed(2)}`;
+      return `IP ${Number(stat(p, 'IP', 'ip')).toFixed(1)} | W ${stat(p, 'W', 'w')} | SV ${stat(p, 'SV', 'sv')} | K ${stat(p, 'pitchingK', 'pK')} | ERA ${Number(stat(p, 'ERA', 'era')).toFixed(2)} | WHIP ${Number(stat(p, 'WHIP', 'whip')).toFixed(2)}`;
     }
-    return `R ${p.R || 0} | H ${p.H || 0} | 2B ${p.twoB || 0} | 3B ${p.threeB || 0} | HR ${p.HR || 0} | RBI ${p.RBI || 0} | SB ${p.SB || 0} | BB ${p.BB || 0} | K ${p.K || 0}`;
+    return `R ${stat(p, 'R', 'r')} | H ${stat(p, 'H', 'h')} | 2B ${stat(p, 'twoB', '2B')} | 3B ${stat(p, 'threeB', '3B')} | HR ${stat(p, 'HR', 'hr')} | RBI ${stat(p, 'RBI', 'rbi')} | SB ${stat(p, 'SB', 'sb')} | BB ${stat(p, 'BB', 'bb')} | K ${stat(p, 'K', 'k')}`;
   };
   const myTeam = draftState?.teams?.find(t => t.id === myTeamId) || null;
   const { keepers: draftedKeepers, picks: draftedPicks } = buildDraftBoard(draftState);
@@ -663,14 +672,14 @@ export default function App() {
                             <td><strong>{p.name}</strong></td>
                             <td><span className="badge">{p.position}</span></td>
                             <td>{p.team}</td>
-                            <td>{Number(p.IP || 0).toFixed(1)}</td>
-                            <td>{p.W || 0}</td>
-                            <td>{p.L || 0}</td>
-                            <td>{p.SV || 0}</td>
-                            <td>{p.pitchingBB || 0}</td>
-                            <td>{p.pitchingK || 0}</td>
-                            <td>{Number(p.ERA || 0).toFixed(2)}</td>
-                            <td>{Number(p.WHIP || 0).toFixed(2)}</td>
+                            <td>{Number(stat(p, 'IP', 'ip')).toFixed(1)}</td>
+                            <td>{stat(p, 'W', 'w')}</td>
+                            <td>{stat(p, 'L', 'l')}</td>
+                            <td>{stat(p, 'SV', 'sv')}</td>
+                            <td>{stat(p, 'pitchingBB', 'pBB')}</td>
+                            <td>{stat(p, 'pitchingK', 'pK')}</td>
+                            <td>{Number(stat(p, 'ERA', 'era')).toFixed(2)}</td>
+                            <td>{Number(stat(p, 'WHIP', 'whip')).toFixed(2)}</td>
                             <td><button className="btn-primary" style={{ padding: '4px 12px', fontSize: '0.85em' }} onClick={() => handlePickPlayer(p)}>Draft</button></td>
                           </tr>
                         ))}
@@ -694,15 +703,15 @@ export default function App() {
                             <td><strong>{p.name}</strong></td>
                             <td><span className="badge">{p.position}</span></td>
                             <td>{p.team}</td>
-                            <td>{p.R || 0}</td>
-                            <td>{p.H || 0}</td>
-                            <td>{p.twoB || 0}</td>
-                            <td>{p.threeB || 0}</td>
-                            <td>{p.HR || 0}</td>
-                            <td>{p.RBI || 0}</td>
-                            <td>{p.SB || 0}</td>
-                            <td>{p.BB || 0}</td>
-                            <td>{p.K || 0}</td>
+                            <td>{stat(p, 'R', 'r')}</td>
+                            <td>{stat(p, 'H', 'h')}</td>
+                            <td>{stat(p, 'twoB', '2B')}</td>
+                            <td>{stat(p, 'threeB', '3B')}</td>
+                            <td>{stat(p, 'HR', 'hr')}</td>
+                            <td>{stat(p, 'RBI', 'rbi')}</td>
+                            <td>{stat(p, 'SB', 'sb')}</td>
+                            <td>{stat(p, 'BB', 'bb')}</td>
+                            <td>{stat(p, 'K', 'k')}</td>
                             <td><button className="btn-primary" style={{ padding: '4px 12px', fontSize: '0.85em' }} onClick={() => handlePickPlayer(p)}>Draft</button></td>
                           </tr>
                         ))}
