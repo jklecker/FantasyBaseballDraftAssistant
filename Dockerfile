@@ -12,11 +12,9 @@ WORKDIR /app
 COPY gradlew gradlew.bat build.gradle.kts settings.gradle.kts ./
 COPY gradle ./gradle
 COPY src ./src
-# Belt: copy directly into src/main/resources/static so Spring Boot picks it up
-# as classpath:/static/ without needing Gradle config.
+# Copy the Vite build into src/main/resources/static/ so Gradle's default
+# processResources task bundles it into classpath:/static/ inside the JAR.
 COPY --from=frontend /frontend/build ./src/main/resources/static
-# Suspenders: also place at frontend/build so Gradle processResources config works too.
-COPY --from=frontend /frontend/build ./frontend/build
 RUN chmod +x ./gradlew && ./gradlew bootJar --no-daemon -x test
 
 # ── Stage 3: minimal runtime image ───────────────────────────────────────────

@@ -29,16 +29,10 @@ dependencies {
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
-// Bundle the Vite production build into the Spring Boot JAR as static resources.
-// In Docker, the frontend/build dir is populated by Stage 1 before Gradle runs.
-// Locally, run `npm run build` in /frontend first, then `./gradlew bootJar`.
-tasks.named<Copy>("processResources") {
-    from("frontend/build") {
-        into("static")
-    }
-}
+// NOTE: The Vite production build is copied into src/main/resources/static/ by the
+// Dockerfile BEFORE Gradle runs. Gradle's default processResources task picks it up
+// automatically from src/main/resources/ — no extra configuration needed.
 
 tasks.test {
     useJUnitPlatform()
 }
-
