@@ -151,4 +151,26 @@ public class DraftService {
     public DraftState getDraftState() {
         return draftState;
     }
+
+    /**
+     * Get the currently active scoring preset key for this draft session.
+     * Defaults to "h2h_categories" if not set.
+     */
+    public String getActiveScoringPreset() {
+        if (draftState == null) {
+            throw new IllegalStateException("Draft not initialized.");
+        }
+        return draftState.getActiveScoringPreset();
+    }
+
+    /**
+     * Set the active scoring preset for this draft session.
+     * This affects all future recommendations calculations.
+     */
+    public void setActiveScoringPreset(String presetKey) {
+        if (draftState == null) {
+            throw new IllegalStateException("Draft not initialized.");
+        }
+        draftState.setActiveScoringPreset(presetKey);
+    }
 }

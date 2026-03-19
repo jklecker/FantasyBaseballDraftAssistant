@@ -107,6 +107,11 @@ export default function App() {
   const [statusMsg, setStatusMsg]   = useState('');
   const [errorMsg, setErrorMsg]     = useState('');
 
+  // Scoring presets state
+  const [scoringPresets, setScoringPresets] = useState([]);
+  const [activeScoring, setActiveScoring] = useState(null);
+  const [scoringLoading, setScoringLoading] = useState(false);
+
   // Keep-alive
   const [lastPing, setLastPing] = useState(null);
   const [pinging, setPinging]   = useState(false);
@@ -203,7 +208,52 @@ export default function App() {
     setRecsLoading(false);
   }, []);
 
-  useEffect(() => { loadState(); loadCurrentTeam(); }, [loadState, loadCurrentTeam]);
+  const loadScoringPresets = useCallback(async () => {
+    try {
+      const presets = await apiFetch('/draft/scoring/presets');
+      setScoringPresets(presets || []);
+    } catch (_) {
+      setScoringPresets([]);
+    }
+  }, []);
+
+  const loadActiveScoringPreset = useCallback(async () => {
+    try {
+      // Load the active preset for THIS draft session
+      const preset = await apiFetch('/draft/scoring/active-session');
+      setActiveScoring(preset);
+    } catch (_) {
+      // Fallback: try the global endpoint (for backward compat if session not initialized)
+      try {
+        const preset = await apiFetch('/draft/scoring/active');
+        setActiveScoring(preset);
+      } catch (_2) {
+        setActiveScoring(null);
+      }
+    }
+  }, []);
+
+  const handleSetActiveScoringPreset = async (presetKey) => {
+    setScoringLoading(true);
+    setErrorMsg('');
+    try {
+      // Set the preset for THIS draft session
+      await apiFetch(`/draft/scoring/set-preset?presetKey=${encodeURIComponent(presetKey)}`, {
+        method: 'POST',
+      });
+      setStatusMsg('✅ Scoring preset updated! Recommendations will refresh.');
+      await loadActiveScoringPreset();
+      // Refresh recommendations if on the recs tab
+      if (activeTab === 'recs' && myTeamId && draftState?.round) {
+        await loadMyRecs(myTeamId, draftState.round);
+      }
+    } catch (e) {
+      setErrorMsg(`Failed to change scoring preset: ${e.message}`);
+    }
+    setScoringLoading(false);
+  };
+
+  useEffect(() => { loadState(); loadCurrentTeam(); loadScoringPresets(); loadActiveScoringPreset(); }, [loadState, loadCurrentTeam, loadScoringPresets, loadActiveScoringPreset]);
 
   useEffect(() => {
     if (currentTeam && draftState) {
@@ -407,6 +457,7 @@ export default function App() {
           { id: 'recs',    label: '🎯 My Picks' },
           { id: 'keepers', label: '🔒 Keepers (optional)' },
           { id: 'drafted', label: '📜 Drafted' },
+          { id: 'settings', label: '⚙️ Scoring/Settings' },
         ].map(({ id, label }) => (
           <button
             key={id}
@@ -810,66 +861,122 @@ export default function App() {
         </div>
       )}
 
-      {/* ── DRAFTED TAB ─────────────────────────────────────────────────── */}
-      {activeTab === 'drafted' && (
-        <div className="tab-content" data-testid="drafted-tab">
-          {!draftState ? (
-            <p className="hint">Draft not initialized yet.</p>
-          ) : (
-            <>
-              {/* Keepers section */}
-              {draftedKeepers.length > 0 && (
-                <section className="card">
-                  <h3>🔒 Keepers</h3>
-                  <div className="data-table-wrapper">
-                    <table className="data-table">
-                      <thead>
-                        <tr><th>Team</th><th>Player</th><th>Pos</th><th>Kept In Rd</th></tr>
-                      </thead>
-                      <tbody>
-                        {draftedKeepers.map((k, i) => (
-                          <tr key={i}>
-                            <td>{k.teamName}</td>
-                            <td><strong>{k.player.name}</strong></td>
-                            <td><span className="badge">{k.player.position}</span></td>
-                            <td>{k.round}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </section>
-              )}
+      {/* ── SETTINGS TAB ────────────────────────────────────────────────── */}
+      {activeTab === 'settings' && (
+        <div className="tab-content" data-testid="settings-tab">
+          <section className="card">
+            <h3>⚙️ Scoring Settings</h3>
+            <p className="hint">
+              Select a scoring preset to use for player rankings and recommendations. 
+              Each preset defines how stats are weighted when calculating player scores.
+            </p>
 
-              {/* Draft picks section */}
-              {draftedPicks.length > 0 ? (
-                <section className="card">
-                  <h3>Draft Picks</h3>
-                  <div className="data-table-wrapper">
-                    <table className="data-table">
-                      <thead>
-                        <tr><th>#</th><th>Rd</th><th>Team</th><th>Player</th><th>Pos</th></tr>
-                      </thead>
-                      <tbody>
-                        {draftedPicks.map((pick, i) => (
-                          <tr key={i}
-                            className={i > 0 && pick.round !== draftedPicks[i - 1].round ? 'round-divider' : ''}>
-                            <td className="pick-num">#{pick.overall}</td>
-                            <td>Rd {pick.round}</td>
-                            <td>{pick.teamName}</td>
-                            <td><strong>{pick.player.name}</strong></td>
-                            <td><span className="badge">{pick.player.position}</span></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+            {/* Preset selector */}
+            {scoringPresets.length > 0 ? (
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>
+                  Scoring Preset:
+                </label>
+                <select
+                  value={activeScoring?.activePresetKey || ''}
+                  onChange={e => e.target.value && handleSetActiveScoringPreset(e.target.value)}
+                  disabled={scoringLoading}
+                  style={{
+                    fontSize: '1em',
+                    padding: '8px 12px',
+                    borderRadius: 6,
+                    minWidth: 300,
+                    cursor: scoringLoading ? 'not-allowed' : 'pointer',
+                  }}
+                  data-testid="scoring-preset-select"
+                >
+                  <option value="">-- Select a preset --</option>
+                  {scoringPresets.map(preset => (
+                    <option key={preset.key} value={preset.key}>
+                      {preset.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <p className="hint">Loading scoring presets...</p>
+            )}
+
+            {/* Active preset details */}
+            {activeScoring && (
+              <div style={{ marginTop: '24px', padding: '16px', background: '#f9f9f9', borderRadius: 8, border: '1px solid #ddd' }}>
+                <h4 style={{ marginTop: 0, marginBottom: 12 }}>📊 Active Preset Details</h4>
+
+                <div style={{ marginBottom: 12 }}>
+                  <strong>Preset:</strong> {activeScoring.name}
+                  <br />
+                  <strong>Type:</strong> {activeScoring.type}
+                  <br />
+                  <strong>Description:</strong> {activeScoring.description}
+                </div>
+
+                {/* Batting weights */}
+                {activeScoring.batting && Object.keys(activeScoring.batting).length > 0 && (
+                  <div style={{ marginBottom: 16 }}>
+                    <h5 style={{ marginBottom: 8 }}>Batting Weights</h5>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8 }}>
+                      {Object.entries(activeScoring.batting).map(([stat, weight]) => (
+                        <div key={stat} style={{
+                          padding: 8,
+                          background: weight > 0 ? '#e8f5e9' : '#ffebee',
+                          borderRadius: 4,
+                          fontSize: '0.85em',
+                        }}>
+                          <strong>{stat}</strong>: {Number(weight).toFixed(2)}
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </section>
-              ) : (
-                draftedKeepers.length === 0 && <p className="hint">No picks yet.</p>
-              )}
-            </>
-          )}
+                )}
+
+                {/* Pitching weights */}
+                {activeScoring.pitching && Object.keys(activeScoring.pitching).length > 0 && (
+                  <div style={{ marginBottom: 16 }}>
+                    <h5 style={{ marginBottom: 8 }}>Pitching Weights</h5>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8 }}>
+                      {Object.entries(activeScoring.pitching).map(([stat, weight]) => (
+                        <div key={stat} style={{
+                          padding: 8,
+                          background: weight > 0 ? '#e8f5e9' : '#ffebee',
+                          borderRadius: 4,
+                          fontSize: '0.85em',
+                        }}>
+                          <strong>{stat}</strong>: {Number(weight).toFixed(2)}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Team need adjustments if present */}
+                {activeScoring.teamNeedAdjustments && Object.keys(activeScoring.teamNeedAdjustments).length > 0 && (
+                  <div>
+                    <h5 style={{ marginBottom: 8 }}>Team Need Adjustments</h5>
+                    <div style={{ fontSize: '0.85em', color: '#666' }}>
+                      <p>Dynamically adjust scoring based on team stat deficits:</p>
+                      <ul style={{ margin: '8px 0' }}>
+                        {Object.entries(activeScoring.teamNeedAdjustments).map(([stat, adjustment]) => (
+                          <li key={stat} style={{ marginBottom: 4 }}>
+                            <strong>{stat}:</strong> {JSON.stringify(adjustment)}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <p className="hint" style={{ marginTop: '20px', fontSize: '0.85em', color: '#999' }}>
+              💡 Tip: When you change the scoring preset, the player recommendations will automatically refresh 
+              to reflect the new scoring weights on your next view.
+            </p>
+          </section>
         </div>
       )}
     </div>

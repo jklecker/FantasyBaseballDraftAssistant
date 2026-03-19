@@ -1,5 +1,7 @@
 package com.example.fantasybaseball.controller;
 
+import com.example.fantasybaseball.config.ScoringConfigLoader;
+import com.example.fantasybaseball.config.ScoringPreset;
 import com.example.fantasybaseball.dto.InitializeDraftRequest;
 import com.example.fantasybaseball.dto.KeeperRequest;
 import com.example.fantasybaseball.model.DraftState;
@@ -17,6 +19,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -33,6 +36,9 @@ public class DraftController {
 
     @Autowired
     private ScoringService scoringService;
+
+    @Autowired
+    private ScoringConfigLoader scoringConfigLoader;
 
     /**
      * Initialize the draft with a list of team names and snake-order flag.
@@ -107,6 +113,7 @@ public class DraftController {
     /**
      * Get top 5 recommendations for a specific team.
      * Factors in: BPA category score, team stat needs, positional scarcity, late-round upside.
+     * Uses the active preset from this draft session.
      */
     @GetMapping("/recommendations")
     public List<Player> recommendations(@RequestParam int teamId,
@@ -122,8 +129,9 @@ public class DraftController {
                         "Team " + teamId + " not found"));
 
         TeamStats stats = TeamStats.fromTeam(team);
+        String presetKey = draftService.getActiveScoringPreset();
         return scoringService.recommendPlayers(
-                state.getAvailablePlayers(), stats, team, round, limit);
+                state.getAvailablePlayers(), stats, team, round, limit, presetKey);
     }
 
     /**
@@ -131,6 +139,7 @@ public class DraftController {
      * - overall: top N regardless of role
      * - pitchers: top N SP/RP options
      * - batters: top N non-pitchers
+     * Uses the active preset from this draft session.
      */
     @GetMapping("/recommendations/board")
     public Map<String, List<Player>> recommendationBoard(
@@ -149,10 +158,11 @@ public class DraftController {
                         "Team " + teamId + " not found"));
 
         TeamStats stats = TeamStats.fromTeam(team);
+        String presetKey = draftService.getActiveScoringPreset();
         return Map.of(
-                "overall", scoringService.recommendPlayers(state.getAvailablePlayers(), stats, team, round, overallLimit),
-                "pitchers", scoringService.recommendPitchers(state.getAvailablePlayers(), stats, team, round, pitcherLimit),
-                "batters", scoringService.recommendBatters(state.getAvailablePlayers(), stats, team, round, batterLimit)
+                "overall", scoringService.recommendPlayers(state.getAvailablePlayers(), stats, team, round, overallLimit, presetKey),
+                "pitchers", scoringService.recommendPitchers(state.getAvailablePlayers(), stats, team, round, pitcherLimit, presetKey),
+                "batters", scoringService.recommendBatters(state.getAvailablePlayers(), stats, team, round, batterLimit, presetKey)
         );
     }
 
@@ -225,6 +235,131 @@ public class DraftController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         }
         return ResponseEntity.ok(draftService.getDraftState());
+    }
+
+    /**
+     * Get all available scoring presets.
+     * Returns a list of preset metadata (name, type, description).
+     */
+    @GetMapping("/scoring/presets")
+    public ResponseEntity<List<Map<String, String>>> getAvailableScoringPresets() {
+        List<Map<String, String>> presets = new ArrayList<>();
+        for (String presetKey : scoringConfigLoader.getAvailablePresets()) {
+            ScoringPreset preset = scoringConfigLoader.getPreset(presetKey);
+            if (preset != null) {
+                Map<String, String> info = new HashMap<>();
+                info.put("key", presetKey);
+                info.put("name", preset.getName());
+                info.put("type", preset.getType());
+                info.put("description", preset.getDescription());
+                presets.add(info);
+            }
+        }
+        return ResponseEntity.ok(presets);
+    }
+
+    /**
+     * Get the currently active scoring preset with full details.
+     * Returns the preset configuration including batting/pitching weights.
+     */
+    @GetMapping("/scoring/active")
+    public ResponseEntity<Map<String, Object>> getActiveScoringPreset() {
+        ScoringPreset activePreset = scoringConfigLoader.getActivePreset();
+        if (activePreset == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "No active scoring preset configured");
+        }
+        
+        Map<String, Object> response = new HashMap<>();
+        response.put("activePresetKey", scoringConfigLoader.getActivePreset());
+        response.put("name", activePreset.getName());
+        response.put("type", activePreset.getType());
+        response.put("description", activePreset.getDescription());
+        response.put("batting", activePreset.getBatting());
+        response.put("pitching", activePreset.getPitching());
+        response.put("teamNeedAdjustments", activePreset.getTeamNeedAdjustments());
+        
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Get the currently active scoring preset for THIS DRAFT SESSION.
+     * Returns the preset key and its details (batting weights, pitching weights, etc).
+     * Example: GET /draft/scoring/active-session
+     */
+    @GetMapping("/scoring/active-session")
+    public ResponseEntity<Map<String, Object>> getActiveScoringPresetForSession() {
+        requireInitialized();
+        String presetKey = draftService.getActiveScoringPreset();
+        ScoringPreset preset = scoringConfigLoader.getPreset(presetKey);
+        
+        if (preset == null) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Scoring preset '" + presetKey + "' configured for session but not found in config");
+        }
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("activePresetKey", presetKey);
+        response.put("name", preset.getName());
+        response.put("type", preset.getType());
+        response.put("description", preset.getDescription());
+        response.put("batting", preset.getBatting());
+        response.put("pitching", preset.getPitching());
+        response.put("teamNeedAdjustments", preset.getTeamNeedAdjustments());
+        
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Set the active scoring preset for THIS DRAFT SESSION.
+     * Example: POST /draft/scoring/set-preset?presetKey=espn_points_10team
+     * This changes the preset ONLY for this draft session, not globally.
+     * All future recommendations will use the new preset.
+     */
+    @PostMapping("/scoring/set-preset")
+    public ResponseEntity<Map<String, Object>> setActiveScoringPresetForSession(
+            @RequestParam String presetKey) {
+        requireInitialized();
+        
+        if (!scoringConfigLoader.hasPreset(presetKey)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Scoring preset '" + presetKey + "' not found");
+        }
+        
+        draftService.setActiveScoringPreset(presetKey);
+        ScoringPreset newPreset = scoringConfigLoader.getPreset(presetKey);
+        
+        Map<String, Object> response = new HashMap<>();
+        response.put("activePresetKey", presetKey);
+        response.put("name", newPreset.getName());
+        response.put("type", newPreset.getType());
+        response.put("message", "Scoring preset changed for this draft session. Recommendations will update.");
+        
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Set the global active scoring preset (affects the config file).
+     * Example: POST /draft/scoring/set-active?presetKey=espn_points_10team
+     * After setting, all future recommendations will use the new preset.
+     */
+    @PostMapping("/scoring/set-active")
+    public ResponseEntity<Map<String, String>> setActiveScoringPreset(
+            @RequestParam String presetKey) {
+        if (!scoringConfigLoader.hasPreset(presetKey)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Scoring preset '" + presetKey + "' not found");
+        }
+        
+        scoringConfigLoader.setActivePreset(presetKey);
+        ScoringPreset newActive = scoringConfigLoader.getActivePreset();
+        
+        Map<String, String> response = new HashMap<>();
+        response.put("activePreset", presetKey);
+        response.put("name", newActive.getName());
+        response.put("message", "Scoring preset changed successfully. Recommendations will update.");
+        
+        return ResponseEntity.ok(response);
     }
 
     private void requireInitialized() {

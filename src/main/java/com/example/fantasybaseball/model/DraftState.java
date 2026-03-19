@@ -11,5 +11,6 @@ public class DraftState {
     private List<Player> availablePlayers;
     private List<Player> draftedPlayers;
     private boolean snakeOrder;
+    private String activeScoringPreset = "h2h_categories";
 }
 

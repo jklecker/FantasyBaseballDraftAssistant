@@ -105,6 +105,25 @@ public class ScoringService {
         if (preset == null) {
             return scorePlayerDefault(player, teamStats);
         }
+        return scorePlayerWithPreset(player, teamStats, preset);
+    }
+
+    /**
+     * Score a player using a specific preset key.
+     * Useful for per-draft-session scoring configuration.
+     */
+    public double scorePlayer(Player player, TeamStats teamStats, String presetKey) {
+        ScoringPreset preset = scoringConfig != null ? scoringConfig.getPreset(presetKey) : null;
+        if (preset == null) {
+            return scorePlayerDefault(player, teamStats);
+        }
+        return scorePlayerWithPreset(player, teamStats, preset);
+    }
+
+    /**
+     * Internal method to score with a given preset object.
+     */
+    private double scorePlayerWithPreset(Player player, TeamStats teamStats, ScoringPreset preset) {
 
         double score = 0;
 
@@ -221,6 +240,25 @@ public class ScoringService {
     }
 
     /**
+     * Full advanced scoring with a specific preset key.
+     */
+    public double scorePlayerAdvanced(Player player, TeamStats myTeamStats,
+                                      Team myTeam, List<Player> available, int currentRound, String presetKey) {
+        double score = scorePlayer(player, myTeamStats, presetKey);
+
+        // Positional need + scarcity
+        score += computePositionalScarcityBoost(player, myTeam, available);
+
+        // Late-round upside: grows from round 11, capped at +100%
+        if (currentRound > 10) {
+            double upsideFactor = Math.min((currentRound - 10) * 0.1, 1.0);
+            score += computeUpside(player) * upsideFactor;
+        }
+
+        return score;
+    }
+
+    /**
      * Return the top 5 available players for the team on the clock.
      * Ranks by: BPA category score + positional need/scarcity + late-round upside.
      */
@@ -243,6 +281,19 @@ public class ScoringService {
     }
 
     /**
+     * Return top N players by advanced score using a specific preset key.
+     */
+    public List<Player> recommendPlayers(List<Player> available, TeamStats teamStats,
+                                         Team myTeam, int currentRound, int limit, String presetKey) {
+        return available.stream()
+                .sorted(Comparator.comparingDouble(
+                        (Player p) -> scorePlayerAdvanced(p, teamStats, myTeam, available, currentRound, presetKey)
+                ).reversed())
+                .limit(Math.max(1, limit))
+                .collect(Collectors.toList());
+    }
+
+    /**
      * Return top N pitchers (SP/RP or players with IP > 0).
      */
     public List<Player> recommendPitchers(List<Player> available, TeamStats teamStats,
@@ -257,6 +308,20 @@ public class ScoringService {
     }
 
     /**
+     * Return top N pitchers using a specific preset key.
+     */
+    public List<Player> recommendPitchers(List<Player> available, TeamStats teamStats,
+                                          Team myTeam, int currentRound, int limit, String presetKey) {
+        return available.stream()
+                .filter(p -> p.getIP() > 0 || "SP".equals(p.getPosition()) || "RP".equals(p.getPosition()))
+                .sorted(Comparator.comparingDouble(
+                        (Player p) -> scorePlayerAdvanced(p, teamStats, myTeam, available, currentRound, presetKey)
+                ).reversed())
+                .limit(Math.max(1, limit))
+                .collect(Collectors.toList());
+    }
+
+    /**
      * Return top N hitters (non-pitchers).
      */
     public List<Player> recommendBatters(List<Player> available, TeamStats teamStats,
@@ -265,6 +330,20 @@ public class ScoringService {
                 .filter(p -> !(p.getIP() > 0 || "SP".equals(p.getPosition()) || "RP".equals(p.getPosition())))
                 .sorted(Comparator.comparingDouble(
                         (Player p) -> scorePlayerAdvanced(p, teamStats, myTeam, available, currentRound)
+                ).reversed())
+                .limit(Math.max(1, limit))
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Return top N hitters using a specific preset key.
+     */
+    public List<Player> recommendBatters(List<Player> available, TeamStats teamStats,
+                                         Team myTeam, int currentRound, int limit, String presetKey) {
+        return available.stream()
+                .filter(p -> !(p.getIP() > 0 || "SP".equals(p.getPosition()) || "RP".equals(p.getPosition())))
+                .sorted(Comparator.comparingDouble(
+                        (Player p) -> scorePlayerAdvanced(p, teamStats, myTeam, available, currentRound, presetKey)
                 ).reversed())
                 .limit(Math.max(1, limit))
                 .collect(Collectors.toList());
