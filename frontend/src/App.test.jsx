@@ -222,11 +222,10 @@ describe('Keeper grid', () => {
     fireEvent.click(screen.getByRole('tab', { name: /Keepers \(optional\)/i }));
   });
 
-  test('renders 12 team rows (Team 1–11 + Your Team)', () => {
+  test('renders 12 team rows (Team 1–12)', () => {
     const grid = screen.getByTestId('keeper-grid');
-    expect(within(grid).getByText('Team 1')).toBeInTheDocument();
-    expect(within(grid).getByText('Team 11')).toBeInTheDocument();
-    expect(within(grid).getByText('Your Team')).toBeInTheDocument();
+    const teamRows = within(grid).getAllByText(/^Team \d+/);
+    expect(teamRows.length).toBe(12);
   });
 
   test('shows Submit All Keepers button', () => {

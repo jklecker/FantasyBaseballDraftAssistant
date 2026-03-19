@@ -43,14 +43,20 @@ function PlayerSearch({ label, value, onChange, onSelect, results }) {
 
 // ─── initialKeeperGrid ────────────────────────────────────────────────────────
 
-function makeKeeperGrid() {
-  return Array.from({ length: 12 }, (_, i) => ({
-    name: i < 11 ? `Team ${i + 1}` : 'Your Team',
-    keepers: [
-      { search: '', results: [], player: null, round: '' },
-      { search: '', results: [], player: null, round: '' },
-    ],
-  }));
+function makeKeeperGrid(myTeamId = null) {
+  return Array.from({ length: 12 }, (_, i) => {
+    const teamNum = i + 1;
+    const isMyTeam = myTeamId && myTeamId === teamNum;
+    return {
+      name: `Team ${teamNum}${isMyTeam ? ' (Your Team)' : ''}`,
+      teamId: teamNum,
+      isMyTeam,
+      keepers: [
+        { search: '', results: [], player: null, round: '' },
+        { search: '', results: [], player: null, round: '' },
+      ],
+    };
+  });
 }
 
 // ─── buildDraftBoard ──────────────────────────────────────────────────────────
@@ -110,9 +116,6 @@ export default function App() {
   const [pickResults, setPickResults] = useState([]);
   const [selectedPick, setSelectedPick] = useState(null);
 
-  // Keeper grid — 12 teams × 2 slots each
-  const [keeperGrid, setKeeperGrid] = useState(makeKeeperGrid);
-
   // My Picks tab state
   const [myTeamId, setMyTeamId] = useState(() => {
     try {
@@ -123,6 +126,9 @@ export default function App() {
       return null;
     }
   });
+
+  // Keeper grid — 12 teams × 2 slots each (rebuilt when myTeamId changes)
+  const [keeperGrid, setKeeperGrid] = useState(() => makeKeeperGrid(null));
   const [myRecBoard, setMyRecBoard] = useState({ overall: [], pitchers: [], batters: [] });
   const [recsLoading, setRecsLoading] = useState(false);
 
@@ -229,6 +235,11 @@ export default function App() {
     try {
       window.localStorage.setItem('myTeamId', String(myTeamId));
     } catch (_) {}
+  }, [myTeamId]);
+
+  // Rebuild keeper grid when myTeamId changes to update team labels
+  useEffect(() => {
+    setKeeperGrid(makeKeeperGrid(myTeamId));
   }, [myTeamId]);
 
   // ── keep-alive ───────────────────────────────────────────────────────────
@@ -606,88 +617,94 @@ export default function App() {
               ) : (
                 <>
                   <h4 style={{ margin: '8px 0' }}>Top 15 Overall</h4>
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th>#</th><th>Player</th><th>Pos</th><th>MLB</th><th>Projected Stats</th><th></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {myRecBoard.overall.map((p, i) => (
-                        <tr key={`overall-${p.id}`}>
-                          <td className="pick-num">#{i + 1}</td>
-                          <td><strong>{p.name}</strong></td>
-                          <td><span className="badge">{p.position}</span></td>
-                          <td>{p.team}</td>
-                          <td style={{ fontSize: '0.85em' }}>{overallProjection(p)}</td>
-                          <td>
-                            <button className="btn-primary" style={{ padding: '4px 12px', fontSize: '0.85em' }} onClick={() => handlePickPlayer(p)}>
-                              Draft
-                            </button>
-                          </td>
+                  <div className="data-table-wrapper">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>#</th><th>Player</th><th>Pos</th><th>MLB</th><th>Projected Stats</th><th></th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {myRecBoard.overall.map((p, i) => (
+                          <tr key={`overall-${p.id}`}>
+                            <td className="pick-num">#{i + 1}</td>
+                            <td><strong>{p.name}</strong></td>
+                            <td><span className="badge">{p.position}</span></td>
+                            <td>{p.team}</td>
+                            <td style={{ fontSize: '0.85em' }}>{overallProjection(p)}</td>
+                            <td>
+                              <button className="btn-primary" style={{ padding: '4px 12px', fontSize: '0.85em' }} onClick={() => handlePickPlayer(p)}>
+                                Draft
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
 
                   <h4 style={{ margin: '16px 0 8px' }}>Top 10 Pitchers</h4>
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th>#</th><th>Player</th><th>Pos</th><th>MLB</th>
-                        <th>IP</th><th>W</th><th>L</th><th>SV</th><th>BB</th><th>K</th><th>ERA</th><th>WHIP</th><th></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {myRecBoard.pitchers.map((p, i) => (
-                        <tr key={`pitcher-${p.id}`}>
-                          <td className="pick-num">#{i + 1}</td>
-                          <td><strong>{p.name}</strong></td>
-                          <td><span className="badge">{p.position}</span></td>
-                          <td>{p.team}</td>
-                          <td>{Number(p.IP || 0).toFixed(1)}</td>
-                          <td>{p.W || 0}</td>
-                          <td>{p.L || 0}</td>
-                          <td>{p.SV || 0}</td>
-                          <td>{p.pitchingBB || 0}</td>
-                          <td>{p.pitchingK || 0}</td>
-                          <td>{Number(p.ERA || 0).toFixed(2)}</td>
-                          <td>{Number(p.WHIP || 0).toFixed(2)}</td>
-                          <td><button className="btn-primary" style={{ padding: '4px 12px', fontSize: '0.85em' }} onClick={() => handlePickPlayer(p)}>Draft</button></td>
+                  <div className="data-table-wrapper">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>#</th><th>Player</th><th>Pos</th><th>MLB</th>
+                          <th>IP</th><th>W</th><th>L</th><th>SV</th><th>BB</th><th>K</th><th>ERA</th><th>WHIP</th><th></th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {myRecBoard.pitchers.map((p, i) => (
+                          <tr key={`pitcher-${p.id}`}>
+                            <td className="pick-num">#{i + 1}</td>
+                            <td><strong>{p.name}</strong></td>
+                            <td><span className="badge">{p.position}</span></td>
+                            <td>{p.team}</td>
+                            <td>{Number(p.IP || 0).toFixed(1)}</td>
+                            <td>{p.W || 0}</td>
+                            <td>{p.L || 0}</td>
+                            <td>{p.SV || 0}</td>
+                            <td>{p.pitchingBB || 0}</td>
+                            <td>{p.pitchingK || 0}</td>
+                            <td>{Number(p.ERA || 0).toFixed(2)}</td>
+                            <td>{Number(p.WHIP || 0).toFixed(2)}</td>
+                            <td><button className="btn-primary" style={{ padding: '4px 12px', fontSize: '0.85em' }} onClick={() => handlePickPlayer(p)}>Draft</button></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
 
                   <h4 style={{ margin: '16px 0 8px' }}>Top 10 Batters</h4>
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th>#</th><th>Player</th><th>Pos</th><th>MLB</th>
-                        <th>R</th><th>H</th><th>2B</th><th>3B</th><th>HR</th><th>RBI</th><th>SB</th><th>BB</th><th>K</th><th></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {myRecBoard.batters.map((p, i) => (
-                        <tr key={`batter-${p.id}`}>
-                          <td className="pick-num">#{i + 1}</td>
-                          <td><strong>{p.name}</strong></td>
-                          <td><span className="badge">{p.position}</span></td>
-                          <td>{p.team}</td>
-                          <td>{p.R || 0}</td>
-                          <td>{p.H || 0}</td>
-                          <td>{p.twoB || 0}</td>
-                          <td>{p.threeB || 0}</td>
-                          <td>{p.HR || 0}</td>
-                          <td>{p.RBI || 0}</td>
-                          <td>{p.SB || 0}</td>
-                          <td>{p.BB || 0}</td>
-                          <td>{p.K || 0}</td>
-                          <td><button className="btn-primary" style={{ padding: '4px 12px', fontSize: '0.85em' }} onClick={() => handlePickPlayer(p)}>Draft</button></td>
+                  <div className="data-table-wrapper">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>#</th><th>Player</th><th>Pos</th><th>MLB</th>
+                          <th>R</th><th>H</th><th>2B</th><th>3B</th><th>HR</th><th>RBI</th><th>SB</th><th>BB</th><th>K</th><th></th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {myRecBoard.batters.map((p, i) => (
+                          <tr key={`batter-${p.id}`}>
+                            <td className="pick-num">#{i + 1}</td>
+                            <td><strong>{p.name}</strong></td>
+                            <td><span className="badge">{p.position}</span></td>
+                            <td>{p.team}</td>
+                            <td>{p.R || 0}</td>
+                            <td>{p.H || 0}</td>
+                            <td>{p.twoB || 0}</td>
+                            <td>{p.threeB || 0}</td>
+                            <td>{p.HR || 0}</td>
+                            <td>{p.RBI || 0}</td>
+                            <td>{p.SB || 0}</td>
+                            <td>{p.BB || 0}</td>
+                            <td>{p.K || 0}</td>
+                            <td><button className="btn-primary" style={{ padding: '4px 12px', fontSize: '0.85em' }} onClick={() => handlePickPlayer(p)}>Draft</button></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </>
               )}
             </section>
@@ -717,7 +734,7 @@ export default function App() {
                 </thead>
                 <tbody>
                   {keeperGrid.map((team, ti) => (
-                    <tr key={ti} className={team.name === 'Your Team' ? 'your-team-row' : ''}>
+                    <tr key={ti} className={team.isMyTeam ? 'your-team-row' : ''}>
                       <td className="keeper-team-name">{team.name}</td>
                       {team.keepers.map((k, ki) => (
                         <React.Fragment key={ki}>
@@ -791,21 +808,23 @@ export default function App() {
               {draftedKeepers.length > 0 && (
                 <section className="card">
                   <h3>🔒 Keepers</h3>
-                  <table className="data-table">
-                    <thead>
-                      <tr><th>Team</th><th>Player</th><th>Pos</th><th>Kept In Rd</th></tr>
-                    </thead>
-                    <tbody>
-                      {draftedKeepers.map((k, i) => (
-                        <tr key={i}>
-                          <td>{k.teamName}</td>
-                          <td><strong>{k.player.name}</strong></td>
-                          <td><span className="badge">{k.player.position}</span></td>
-                          <td>{k.round}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  <div className="data-table-wrapper">
+                    <table className="data-table">
+                      <thead>
+                        <tr><th>Team</th><th>Player</th><th>Pos</th><th>Kept In Rd</th></tr>
+                      </thead>
+                      <tbody>
+                        {draftedKeepers.map((k, i) => (
+                          <tr key={i}>
+                            <td>{k.teamName}</td>
+                            <td><strong>{k.player.name}</strong></td>
+                            <td><span className="badge">{k.player.position}</span></td>
+                            <td>{k.round}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </section>
               )}
 
@@ -813,23 +832,25 @@ export default function App() {
               {draftedPicks.length > 0 ? (
                 <section className="card">
                   <h3>Draft Picks</h3>
-                  <table className="data-table">
-                    <thead>
-                      <tr><th>#</th><th>Rd</th><th>Team</th><th>Player</th><th>Pos</th></tr>
-                    </thead>
-                    <tbody>
-                      {draftedPicks.map((pick, i) => (
-                        <tr key={i}
-                          className={i > 0 && pick.round !== draftedPicks[i - 1].round ? 'round-divider' : ''}>
-                          <td className="pick-num">#{pick.overall}</td>
-                          <td>Rd {pick.round}</td>
-                          <td>{pick.teamName}</td>
-                          <td><strong>{pick.player.name}</strong></td>
-                          <td><span className="badge">{pick.player.position}</span></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  <div className="data-table-wrapper">
+                    <table className="data-table">
+                      <thead>
+                        <tr><th>#</th><th>Rd</th><th>Team</th><th>Player</th><th>Pos</th></tr>
+                      </thead>
+                      <tbody>
+                        {draftedPicks.map((pick, i) => (
+                          <tr key={i}
+                            className={i > 0 && pick.round !== draftedPicks[i - 1].round ? 'round-divider' : ''}>
+                            <td className="pick-num">#{pick.overall}</td>
+                            <td>Rd {pick.round}</td>
+                            <td>{pick.teamName}</td>
+                            <td><strong>{pick.player.name}</strong></td>
+                            <td><span className="badge">{pick.player.position}</span></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </section>
               ) : (
                 draftedKeepers.length === 0 && <p className="hint">No picks yet.</p>

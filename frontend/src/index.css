@@ -156,17 +156,43 @@ body {
 .btn-remove:hover { background: #fff5f5; }
 
 /* ── Data table ─────────────────────────────────────────────────────────────── */
-.data-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+  background: #fff;
+}
 .data-table th {
   text-align: left;
-  padding: 8px 10px;
+  padding: 10px 8px;
   background: #edf2f7;
   color: #4a5568;
   font-weight: 600;
   border-bottom: 2px solid #e2e8f0;
+  white-space: nowrap;
 }
-.data-table td { padding: 8px 10px; border-bottom: 1px solid #e2e8f0; }
+.data-table td {
+  padding: 8px 8px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #fff;
+}
+.data-table tr:nth-child(odd) td { background: #fff; }
+.data-table tr:nth-child(even) td { background: #f7fafc; }
 .data-table tr.clickable:hover { background: #ebf8ff; cursor: pointer; }
+
+/* Mobile table styles */
+.data-table-wrapper {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: 8px;
+}
+
+@media (max-width: 768px) {
+  .data-table { font-size: 0.75rem; }
+  .data-table th { padding: 6px 4px; }
+  .data-table td { padding: 6px 4px; }
+  .btn-primary { padding: 6px 10px; font-size: 0.75rem; }
+}
 
 /* ── Badge ──────────────────────────────────────────────────────────────────── */
 .badge {
@@ -353,5 +379,132 @@ body {
   vertical-align: middle;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+/* ── Mobile Responsive Styles ───────────────────────────────────────────────── */
+@media (max-width: 1024px) {
+  .app { padding: 0 12px 40px; }
+  .card { padding: 16px 18px; }
+  .data-table { font-size: 0.82rem; }
+  .data-table th { padding: 8px 6px; }
+  .data-table td { padding: 7px 6px; }
+}
+
+@media (max-width: 768px) {
+  .app { padding: 0 8px 30px; }
+  .app-header { padding: 14px 16px; }
+  .app-header h1 { font-size: 1.4rem; }
+
+  .card { padding: 14px 14px; margin-bottom: 16px; }
+  .card h3 { font-size: 0.95rem; margin-bottom: 12px; }
+
+  .tabs { gap: 6px; margin-bottom: 14px; }
+  .tab { padding: 8px 16px; font-size: 0.85rem; }
+
+  .data-table { font-size: 0.75rem; }
+  .data-table th { padding: 6px 4px; font-size: 0.7rem; }
+  .data-table td { padding: 5px 4px; font-size: 0.75rem; }
+  .data-table-wrapper { border-radius: 6px; }
+
+  .badge { padding: 0px 4px; font-size: 0.65rem; margin-left: 2px; }
+  .pick-num { font-size: 0.7rem; }
+
+  .btn-primary { padding: 5px 8px; font-size: 0.7rem; margin-top: 2px; }
+  .btn-remove { padding: 2px 6px; font-size: 0.7rem; }
+
+  .player-search input { max-width: 100%; width: 100%; }
+  .search-dropdown { width: 100%; }
+
+  .on-the-clock { gap: 8px; padding: 10px 14px; }
+  .clock-main { flex-wrap: wrap; gap: 8px; }
+  .clock-label { font-size: 0.75rem; }
+  .clock-team { font-size: 1rem; }
+  .clock-meta { font-size: 0.8rem; margin-left: 0; width: 100%; }
+
+  .needs-row { gap: 4px; }
+  .needs-badge { padding: 1px 6px; font-size: 0.65rem; }
+
+  .upside-badge { padding: 1px 6px; font-size: 0.65rem; }
+
+  .picking-for { font-size: 0.8rem; margin-left: 4px; }
+
+  .team-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+  .team-card { padding: 10px 10px; }
+  .team-card h4 { font-size: 0.8rem; margin-bottom: 6px; }
+  .team-card ol { font-size: 0.75rem; padding-left: 14px; line-height: 1.5; }
+
+  .keeper-table { font-size: 0.75rem; }
+  .keeper-table th { padding: 5px 4px; }
+  .keeper-table td { padding: 4px 3px; }
+  .keeper-player-cell { min-width: 140px; }
+  .keeper-player-input { font-size: 0.7rem; padding: 4px 6px; }
+  .keeper-round-input { width: 40px; font-size: 0.7rem; }
+
+  .pending-pick-hint { font-size: 0.75rem; }
+  .hint { font-size: 0.8rem; }
+}
+
+@media (max-width: 480px) {
+  .app { padding: 0 6px 20px; }
+  .app-header { padding: 12px 12px; margin: 0 -6px 16px; }
+  .app-header h1 { font-size: 1.2rem; }
+
+  .card { padding: 12px 12px; margin-bottom: 12px; }
+  .card h3 { font-size: 0.9rem; margin-bottom: 10px; }
+
+  .tabs { gap: 4px; margin-bottom: 10px; flex-wrap: wrap; }
+  .tab { padding: 6px 12px; font-size: 0.75rem; flex: 1; text-align: center; }
+
+  .data-table { font-size: 0.65rem; }
+  .data-table th { padding: 4px 3px; font-size: 0.6rem; }
+  .data-table td { padding: 4px 3px; font-size: 0.65rem; }
+
+  .badge { padding: 0px 3px; font-size: 0.55rem; margin-left: 1px; }
+  .pick-num { font-size: 0.65rem; }
+
+  .btn-primary { padding: 4px 6px; font-size: 0.65rem; margin-top: 1px; min-width: auto; }
+  .btn-remove { padding: 1px 4px; font-size: 0.6rem; }
+
+  .player-search input { font-size: 0.85rem; padding: 7px 10px; }
+
+  .on-the-clock { gap: 6px; padding: 8px 10px; }
+  .clock-main { gap: 6px; }
+  .clock-label { font-size: 0.65rem; }
+  .clock-team { font-size: 0.9rem; }
+  .clock-meta { font-size: 0.7rem; }
+
+  .needs-row { gap: 3px; flex-wrap: wrap; }
+  .needs-label { font-size: 0.7rem; }
+  .needs-badge { padding: 1px 5px; font-size: 0.6rem; }
+
+  .upside-badge { padding: 1px 4px; font-size: 0.6rem; }
+
+  .team-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
+  .team-card { padding: 8px 8px; }
+  .team-card h4 { font-size: 0.7rem; margin-bottom: 4px; }
+  .team-card ol { font-size: 0.65rem; padding-left: 12px; line-height: 1.4; }
+
+  .keeper-table { font-size: 0.65rem; }
+  .keeper-table th { padding: 4px 2px; }
+  .keeper-table td { padding: 3px 2px; }
+  .keeper-team-name { font-size: 0.65rem; padding-right: 6px; }
+  .keeper-player-cell { min-width: 100px; }
+  .keeper-player-input { font-size: 0.65rem; padding: 3px 5px; }
+  .keeper-selected-name { font-size: 0.65rem; }
+  .keeper-round-input { width: 35px; font-size: 0.65rem; }
+
+  .pending-pick-hint { font-size: 0.7rem; }
+  .picking-for { font-size: 0.75rem; margin-left: 2px; }
+
+  .keepalive-bar { padding: 4px 8px; gap: 6px; font-size: 0.65rem; }
+  .btn-ping { padding: 1px 6px; font-size: 0.65rem; }
+
+  .hint { font-size: 0.75rem; }
+
+  .selected-player { padding: 6px 10px; font-size: 0.8rem; }
+
+  .banner { padding: 10px 14px; font-size: 0.8rem; }
+
+  .optional-tag { padding: 0px 5px; font-size: 0.6rem; margin-left: 4px; }
 }
 
