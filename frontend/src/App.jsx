@@ -113,6 +113,11 @@ export default function App() {
   // Keeper grid — 12 teams × 2 slots each
   const [keeperGrid, setKeeperGrid] = useState(makeKeeperGrid);
 
+  // My Picks tab state
+  const [myTeamId, setMyTeamId] = useState(null);
+  const [myRecs, setMyRecs] = useState([]);
+  const [recsLoading, setRecsLoading] = useState(false);
+
   // Fuse.js index — rebuilt whenever the available player pool changes
   const fuseRef = useRef(null);
 
