@@ -1,0 +1,126 @@
+{
+  "activePreset": "h2h_categories",
+  "presets": {
+    "h2h_categories": {
+      "name": "H2H Weekly Categories (Default)",
+      "type": "h2h_categories",
+      "description": "Current league format - head-to-head weekly categories",
+      "batting": {
+        "R": 1.0,
+        "H": 0.8,
+        "2B": 0.5,
+        "3B": 0.7,
+        "HR": 1.5,
+        "RBI": 1.0,
+        "SB": 1.2,
+        "BB": 0.3,
+        "K": -0.7
+      },
+      "pitching": {
+        "IP": 0.5,
+        "W": 1.0,
+        "L": -1.0,
+        "SV": 1.5,
+        "BB": -0.5,
+        "K": 0.7,
+        "ERA": -2.0,
+        "WHIP": -3.0
+      },
+      "teamNeedAdjustments": {
+        "SB": {
+          "threshold": 10,
+          "boost": 1.5
+        },
+        "K": {
+          "threshold": 100,
+          "penalty": 0.5
+        },
+        "SV": {
+          "threshold": 0,
+          "boost": 1.0
+        },
+        "HR": {
+          "threshold": 10,
+          "boost": 0.5
+        }
+      }
+    },
+    "espn_points_10team": {
+      "name": "ESPN Points League (10-team)",
+      "type": "points",
+      "description": "Standard ESPN 10-team points league scoring",
+      "batting": {
+        "R": 1.0,
+        "H": 1.0,
+        "2B": 2.0,
+        "3B": 3.0,
+        "HR": 4.0,
+        "RBI": 1.0,
+        "SB": 2.0,
+        "BB": 1.0,
+        "K": -1.0
+      },
+      "pitching": {
+        "IP": 1.0,
+        "W": 3.0,
+        "L": -2.0,
+        "SV": 5.0,
+        "BB": -1.0,
+        "K": 1.0,
+        "ERA": -2.0,
+        "WHIP": -1.0
+      },
+      "teamNeedAdjustments": {}
+    },
+    "yahoo_h2h_points": {
+      "name": "Yahoo H2H Points",
+      "type": "points",
+      "description": "Yahoo head-to-head points league (weekly)",
+      "batting": {
+        "R": 1.0,
+        "H": 1.0,
+        "2B": 1.0,
+        "3B": 1.0,
+        "HR": 2.0,
+        "RBI": 1.0,
+        "SB": 1.0,
+        "BB": 1.0,
+        "K": -1.0
+      },
+      "pitching": {
+        "IP": 1.0,
+        "W": 3.0,
+        "L": -2.0,
+        "SV": 5.0,
+        "BB": -1.0,
+        "K": 1.0,
+        "ERA": -2.0,
+        "WHIP": -1.0
+      },
+      "teamNeedAdjustments": {}
+    }
+  },
+  "advancedFeatures": {
+    "positionalScarcityBoost": {
+      "enabled": true,
+      "minBonus": 5.0,
+      "maxBonus": 35.0
+    },
+    "lateRoundUpsideBoost": {
+      "enabled": true,
+      "startRound": 11,
+      "maxBoost": 1.0
+    },
+    "rosterRequirements": {
+      "C": 1,
+      "1B": 1,
+      "2B": 1,
+      "3B": 1,
+      "SS": 1,
+      "OF": 3,
+      "SP": 2,
+      "RP": 1
+    }
+  }
+}
+

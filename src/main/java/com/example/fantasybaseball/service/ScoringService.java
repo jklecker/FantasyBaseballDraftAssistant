@@ -1,8 +1,11 @@
 package com.example.fantasybaseball.service;
 
+import com.example.fantasybaseball.config.ScoringConfigLoader;
+import com.example.fantasybaseball.config.ScoringPreset;
 import com.example.fantasybaseball.model.Player;
 import com.example.fantasybaseball.model.Team;
 import com.example.fantasybaseball.model.TeamStats;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -22,6 +25,9 @@ import java.util.stream.Collectors;
  */
 @Service
 public class ScoringService {
+
+    @Autowired
+    private ScoringConfigLoader scoringConfig;
 
     /**
      * Standard H2H roster requirements (primary slots only).
@@ -94,9 +100,71 @@ public class ScoringService {
 
 
     public double scorePlayer(Player player, TeamStats teamStats) {
+        // Load active scoring preset from config
+        ScoringPreset preset = scoringConfig != null ? scoringConfig.getActivePreset() : null;
+        if (preset == null) {
+            return scorePlayerDefault(player, teamStats);
+        }
+
         double score = 0;
 
-        // --- Batting ---
+        // --- Batting stats using config weights ---
+        score += player.getR()      * preset.getBattingWeight("R");
+        score += player.getH()      * preset.getBattingWeight("H");
+        score += player.getTwoB()   * preset.getBattingWeight("2B");
+        score += player.getThreeB() * preset.getBattingWeight("3B");
+        score += player.getHR()     * preset.getBattingWeight("HR");
+        score += player.getRBI()    * preset.getBattingWeight("RBI");
+        score += player.getSB()     * preset.getBattingWeight("SB");
+        score += player.getBB()     * preset.getBattingWeight("BB");
+        score += player.getK()      * preset.getBattingWeight("K");
+
+        // --- Pitching stats using config weights ---
+        score += player.getIP()           * preset.getPitchingWeight("IP");
+        score += player.getW()            * preset.getPitchingWeight("W");
+        score += player.getL()            * preset.getPitchingWeight("L");
+        score += player.getSV()           * preset.getPitchingWeight("SV");
+        score += player.getPitchingBB()   * preset.getPitchingWeight("BB");
+        score += player.getPitchingK()    * preset.getPitchingWeight("K");
+        if (player.getIP() > 0) {
+            score += player.getERA()      * preset.getPitchingWeight("ERA");
+            score += player.getWHIP()     * preset.getPitchingWeight("WHIP");
+        }
+
+        // --- Team need adjustments from config ---
+        if (teamStats != null && preset.hasTeamNeedAdjustments()) {
+            // SB adjustment
+            Map<String, Double> sbAdj = preset.getTeamNeedAdjustment("SB");
+            if (!sbAdj.isEmpty() && teamStats.getSB() < sbAdj.get("threshold")) {
+                score += player.getSB() * sbAdj.get("boost");
+            }
+            // K adjustment
+            Map<String, Double> kAdj = preset.getTeamNeedAdjustment("K");
+            if (!kAdj.isEmpty() && teamStats.getK() > kAdj.get("threshold")) {
+                score += player.getK() * kAdj.get("penalty");
+            }
+            // SV adjustment
+            Map<String, Double> svAdj = preset.getTeamNeedAdjustment("SV");
+            if (!svAdj.isEmpty() && teamStats.getSV() == 0) {
+                score += player.getSV() * svAdj.get("boost");
+            }
+            // HR adjustment
+            Map<String, Double> hrAdj = preset.getTeamNeedAdjustment("HR");
+            if (!hrAdj.isEmpty() && teamStats.getHR() < hrAdj.get("threshold")) {
+                score += player.getHR() * hrAdj.get("boost");
+            }
+        }
+
+        return score;
+    }
+
+    /**
+     * Fallback scoring with hardcoded defaults (for backward compatibility if config fails to load).
+     */
+    private double scorePlayerDefault(Player player, TeamStats teamStats) {
+        double score = 0;
+
+        // --- Batting (defaults) ---
         score += player.getR()      * 1.0;
         score += player.getH()      * 0.8;
         score += player.getTwoB()   * 0.5;
@@ -105,29 +173,25 @@ public class ScoringService {
         score += player.getRBI()    * 1.0;
         score += player.getSB()     * 1.2;
         score += player.getBB()     * 0.3;
-        score -= player.getK()      * 0.7; // Ks are bad
+        score -= player.getK()      * 0.7;
 
-        // --- Pitching ---
+        // --- Pitching (defaults) ---
         score += player.getIP()       * 0.5;
         score += player.getW()        * 1.0;
-        score -= player.getL()        * 1.0; // Losses are bad
+        score -= player.getL()        * 1.0;
         score += player.getSV()       * 1.5;
-        score -= player.getPitchingBB() * 0.5; // BB bad
+        score -= player.getPitchingBB() * 0.5;
         score += player.getPitchingK()  * 0.7;
         if (player.getIP() > 0) {
-            score -= player.getERA()  * 2.0; // High ERA bad
-            score -= player.getWHIP() * 3.0; // High WHIP bad
+            score -= player.getERA()  * 2.0;
+            score -= player.getWHIP() * 3.0;
         }
 
-        // --- Team need adjustments ---
+        // --- Team need adjustments (defaults) ---
         if (teamStats != null) {
-            // Boost SB if team is weak in stolen bases
             if (teamStats.getSB() < 10)  score += player.getSB() * 1.5;
-            // Penalise more Ks if team already strikes out a lot
             if (teamStats.getK() > 100)  score -= player.getK() * 0.5;
-            // Boost saves if team has none
             if (teamStats.getSV() == 0)  score += player.getSV() * 1.0;
-            // Boost HR if team is weak in power
             if (teamStats.getHR() < 10)  score += player.getHR() * 0.5;
         }
 
