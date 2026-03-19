@@ -83,7 +83,7 @@ public class DraftController {
     }
 
     /**
-     * Auto-initialize the draft with default team names (Team 1–11 + "My Team")
+     * Auto-initialize the draft with default team names (Team 1..N)
      * and snake order. If the draft is already initialized this is a no-op and
      * just returns the current state — safe to call on every page load.
      */
@@ -96,7 +96,7 @@ public class DraftController {
             for (int i = 1; i <= numTeams; i++) {
                 Team t = new Team();
                 t.setId(i);
-                t.setName(i == numTeams ? "My Team" : "Team " + i);
+                t.setName("Team " + i);
                 teams.add(t);
             }
             draftService.initializeDraft(teams, players, true);

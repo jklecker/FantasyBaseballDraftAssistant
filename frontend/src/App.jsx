@@ -165,7 +165,7 @@ export default function App() {
         const state = await apiFetch('/draft/auto-initialize', { method: 'POST' });
         setDraftState(state);
         buildFuseIndex(state);
-        setStatusMsg('✅ Draft auto-initialized with 12 teams (Team 1–11 + My Team). Keepers are optional.');
+        setStatusMsg('✅ Draft auto-initialized with 12 teams (Team 1–12). Keepers are optional.');
       } catch (_2) { /* ignore */ }
     }
   }, []);
@@ -212,7 +212,7 @@ export default function App() {
     }
   }, [currentTeam, draftState, loadRecommendations, loadPositionalNeeds]);
 
-  // Auto-detect which team is "My Team" (name === 'My Team' or the last team).
+  // Auto-detect user's team (prefer explicit My Team label if present, otherwise last team).
   useEffect(() => {
     if (draftState?.teams && !myTeamId) {
       const found = draftState.teams.find(t => t.name === 'My Team')
