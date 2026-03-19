@@ -12,8 +12,10 @@ WORKDIR /app
 COPY gradlew gradlew.bat build.gradle.kts settings.gradle.kts ./
 COPY gradle ./gradle
 COPY src ./src
-# Copy the Vite build to frontend/build so Gradle's processResources includes it
-# as classpath:/static/ — this avoids Docker layer-cache stale-JAR issues.
+# Belt: copy directly into src/main/resources/static so Spring Boot picks it up
+# as classpath:/static/ without needing Gradle config.
+COPY --from=frontend /frontend/build ./src/main/resources/static
+# Suspenders: also place at frontend/build so Gradle processResources config works too.
 COPY --from=frontend /frontend/build ./frontend/build
 RUN chmod +x ./gradlew && ./gradlew bootJar --no-daemon -x test
 
