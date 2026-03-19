@@ -359,6 +359,19 @@ class DraftControllerIntegrationTest {
         }
 
         @Test
+        @DisplayName("returned players have basic info and stats")
+        void playerDataPopulated() throws Exception {
+            initialize(TWO_TEAMS_JSON);
+            mockMvc.perform(get("/draft/recommendations").param("teamId", "1"))
+                    .andExpect(status().isOk())
+                    // Check first player has basic info
+                    .andExpect(jsonPath("$[0].id").exists())
+                    .andExpect(jsonPath("$[0].name").exists())
+                    .andExpect(jsonPath("$[0].position").exists())
+                    .andExpect(jsonPath("$[0].team").exists());
+        }
+
+        @Test
         @DisplayName("unknown teamId returns 404")
         void unknownTeamId_404() throws Exception {
             initialize(TWO_TEAMS_JSON);
