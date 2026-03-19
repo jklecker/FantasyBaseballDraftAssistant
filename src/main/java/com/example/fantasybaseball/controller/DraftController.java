@@ -110,7 +110,8 @@ public class DraftController {
      */
     @GetMapping("/recommendations")
     public List<Player> recommendations(@RequestParam int teamId,
-                                        @RequestParam(defaultValue = "1") int round) {
+                                        @RequestParam(defaultValue = "1") int round,
+                                        @RequestParam(defaultValue = "15") int limit) {
         requireInitialized();
         DraftState state = draftService.getDraftState();
 
@@ -122,7 +123,7 @@ public class DraftController {
 
         TeamStats stats = TeamStats.fromTeam(team);
         return scoringService.recommendPlayers(
-                state.getAvailablePlayers(), stats, team, round);
+                state.getAvailablePlayers(), stats, team, round, limit);
     }
 
     /**

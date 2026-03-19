@@ -349,12 +349,12 @@ class DraftControllerIntegrationTest {
     class Recommendations {
 
         @Test
-        @DisplayName("returns up to 5 players")
-        void returnsUpTo5Players() throws Exception {
+        @DisplayName("returns up to 15 players (with configurable limit)")
+        void returnsUpTo15Players() throws Exception {
             initialize(TWO_TEAMS_JSON);
             mockMvc.perform(get("/draft/recommendations").param("teamId", "1"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.length()", lessThanOrEqualTo(5)))
+                    .andExpect(jsonPath("$.length()", lessThanOrEqualTo(15)))
                     .andExpect(jsonPath("$.length()", greaterThan(0)));
         }
 

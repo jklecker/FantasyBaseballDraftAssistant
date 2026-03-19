@@ -175,7 +175,7 @@ export default function App() {
   }, []);
 
   const loadRecommendations = useCallback(async (teamId, round) => {
-    try { setRecs(await apiFetch(`/draft/recommendations?teamId=${teamId}&round=${round}`)); }
+    try { setRecs(await apiFetch(`/draft/recommendations?teamId=${teamId}&round=${round}&limit=15`)); }
     catch (_) {}
   }, []);
 
@@ -509,29 +509,33 @@ export default function App() {
           {recommendations.length > 0 && (
             <section className="card">
               <h3>Top Picks for {currentTeam?.name}{isLateRound && ' — Upside Weighted 🚀'}</h3>
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Player</th><th>Pos</th><th>Team</th>
-                    <th>HR</th><th>SB</th><th>R</th><th>RBI</th>
-                    <th>W</th><th>SV</th><th>ERA</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recommendations.map(p => (
-                    <tr key={p.id} className="clickable"
-                      onClick={() => { setSelectedPick(p); setPickSearch(p.name); setPickResults([]); }}
-                      title="Click to select">
-                      <td>{p.name}</td>
-                      <td><span className="badge">{p.position}</span></td>
-                      <td>{p.team}</td>
-                      <td>{p.HR}</td><td>{p.SB}</td><td>{p.R}</td><td>{p.RBI}</td>
-                      <td>{p.W}</td><td>{p.SV}</td>
-                      <td>{p.IP > 0 ? p.ERA.toFixed(2) : '—'}</td>
+              <div className="data-table-wrapper">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>#</th><th>Player</th><th>Pos</th><th>MLB</th><th>Projected Stats</th><th></th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {recommendations.map((p, i) => (
+                      <tr key={p.id} className="clickable"
+                        onClick={() => { setSelectedPick(p); setPickSearch(p.name); setPickResults([]); }}
+                        title="Click to select">
+                        <td className="pick-num">#{i + 1}</td>
+                        <td><strong>{p.name}</strong></td>
+                        <td><span className="badge">{p.position}</span></td>
+                        <td>{p.team}</td>
+                        <td style={{ fontSize: '0.85em' }}>{overallProjection(p)}</td>
+                        <td>
+                          <button className="btn-primary" style={{ padding: '4px 12px', fontSize: '0.85em' }} onClick={(e) => { e.stopPropagation(); setSelectedPick(p); setPickSearch(p.name); handleDraftPick(); }}>
+                            Draft
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </section>
           )}
 
