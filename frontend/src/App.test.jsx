@@ -1,20 +1,21 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { vi } from 'vitest';
 import App from './App';
 
 // ── mock fetch ────────────────────────────────────────────────────────────────
 
 beforeEach(() => {
-  global.fetch = jest.fn().mockResolvedValue({
+  global.fetch = vi.fn().mockResolvedValue({
     ok: false, status: 400,
     json: async () => ({}), text: async () => '',
   });
 });
-afterEach(() => jest.clearAllMocks());
+afterEach(() => vi.clearAllMocks());
 
 function mockFetch(handlers) {
-  global.fetch = jest.fn().mockImplementation((url) => {
+  global.fetch = vi.fn().mockImplementation((url) => {
     for (const [pattern, response] of Object.entries(handlers)) {
       if (url.includes(pattern)) {
         return Promise.resolve({ ok: true, status: 200,
@@ -195,7 +196,7 @@ describe('Team Tracker', () => {
     render(<App />);
     // 'Alpha' appears in the clock-team span, picking-for label, and team-card heading
     await waitFor(() => expect(screen.getAllByText('Alpha')[0]).toBeInTheDocument());
-    expect(screen.getByText('Bravo')).toBeInTheDocument();
+    expect(screen.getAllByText('Bravo').length).toBeGreaterThan(0);
     const cards = document.querySelectorAll('.team-card');
     expect(cards[0].classList).toContain('on-clock');
   });
@@ -338,7 +339,7 @@ describe('Keep-alive bar', () => {
   });
 
   test('manual ping calls /ping and shows last contact', async () => {
-    global.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}), text: async () => 'pong' });
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}), text: async () => 'pong' });
     render(<App />);
     fireEvent.click(screen.getByTitle(/Ping the server now/i));
     await waitFor(() => expect(screen.getByText(/Last contact/i)).toBeInTheDocument());
