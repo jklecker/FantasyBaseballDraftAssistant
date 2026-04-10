@@ -1,6 +1,7 @@
 package com.example.fantasybaseball.model;
 
 import lombok.Data;
+import java.util.Map;
 
 @Data
 public class Player {
@@ -8,6 +9,7 @@ public class Player {
     private String name;
     private String team;
     private String position;
+    private String sport = "baseball";
     // Batting stats
     private int R;
     private int H;
@@ -29,5 +31,11 @@ public class Player {
     private double WHIP;
     // Keeper status
     private boolean keeper;
+    // Generic projected stats (football: passYards, rushTD, receptions, etc.)
+    private Map<String, Double> stats;
+    // Market / analytics (optional — null-safe in scoring)
+    private Double adp;
+    private Map<String, Double> pff;
+    private Map<String, Double> nextGen;
 }
 

@@ -1,5 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Fuse from 'fuse.js';
+import { getSportConfig, isFootball } from './config/sportConfig.js';
+import { FOOTBALL_PRESET_LIST, CUSTOM_SCORING_KEYS } from './config/scoringSystems.js';
+import { normalizeFootballPlayers } from './adapters/footballAdapter.js';
+import { FOOTBALL_PLAYERS } from './data/footballPlayers.js';
+import { runDraftEngine } from './utils/draftEngine.js';
+import { calculateFantasyPoints } from './utils/calculateFantasyPoints.js';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -99,6 +105,30 @@ function buildDraftBoard(draftState) {
 // ─── Main App ─────────────────────────────────────────────────────────────────
 
 export default function App() {
+  const [sport, setSport] = useState(() => {
+    try { return window.localStorage.getItem('sport') || 'baseball'; } catch (_) { return 'baseball'; }
+  });
+  const sportConfig = getSportConfig(sport);
+
+  // Football-specific state
+  const [footballScoringPreset, setFootballScoringPreset] = useState('ppr');
+  const [customFootballScoring, setCustomFootballScoring] = useState(null);
+  const [customScoringJson, setCustomScoringJson] = useState('');
+  const [customScoringError, setCustomScoringError] = useState('');
+  const [footballDraftedIds, setFootballDraftedIds] = useState([]);
+  const [footballBoardSearch, setFootballBoardSearch] = useState('');
+  const [footballBoardSort, setFootballBoardSort] = useState({ col: 'vbd', dir: 'desc' });
+  const [footballEngine, setFootballEngine] = useState(null);
+  const [footballPlayers, setFootballPlayers] = useState(null); // null = not loaded, [] = empty
+  const [footballLoading, setFootballLoading] = useState(false);
+  const [footballError, setFootballError] = useState('');
+  const [footballTeamPos, setFootballTeamPos] = useState(() => {
+    try { return Number(window.localStorage.getItem('footballTeamPos')) || 1; } catch (_) { return 1; }
+  });
+  const [footballTeamSize, setFootballTeamSize] = useState(() => {
+    try { return Number(window.localStorage.getItem('footballTeamSize')) || 12; } catch (_) { return 12; }
+  });
+
   const [activeTab, setActiveTab]   = useState('draft');
   const [draftState, setDraftState] = useState(null);
   const [currentTeam, setCurrentTeam] = useState(null);
@@ -167,7 +197,7 @@ export default function App() {
       // Draft not initialized on the backend (e.g. after a Render restart).
       // Auto-initialize with 12 default teams so the app is immediately usable.
       try {
-        const state = await apiFetch('/draft/auto-initialize', { method: 'POST' });
+        const state = await apiFetch(`/draft/auto-initialize?sport=${sport}`, { method: 'POST' });
         setDraftState(state);
         buildFuseIndex(state);
         setStatusMsg('✅ Draft auto-initialized with 12 teams (Team 1–12). Keepers are optional.');
@@ -252,6 +282,90 @@ export default function App() {
     }
     setScoringLoading(false);
   };
+
+  // ── snake draft helpers ──────────────────────────────────────────────────
+  // Returns which team slot (1-based) is making pick N in a snake draft.
+  const calcTeamForPick = (pickNum, numTeams) => {
+    const round = Math.ceil(pickNum / numTeams);
+    const pickInRound = ((pickNum - 1) % numTeams) + 1;
+    return round % 2 === 1 ? pickInRound : numTeams - pickInRound + 1;
+  };
+
+  // Returns the first overall pick number >= fromPick that belongs to teamPos
+  // in a numTeams-team snake draft.
+  const calcNextSnakePick = (fromPick, teamPos, numTeams) => {
+    for (let round = 1; round <= 30; round++) {
+      const myPick = round % 2 === 1
+        ? (round - 1) * numTeams + teamPos
+        : round * numTeams - teamPos + 1;
+      if (myPick >= fromPick) return myPick;
+    }
+    return null;
+  };
+
+  // Persist sport selection
+  useEffect(() => {
+    try { window.localStorage.setItem('sport', sport); } catch (_) {}
+  }, [sport]);
+
+  // Persist football draft settings
+  useEffect(() => {
+    try { window.localStorage.setItem('footballTeamPos', String(footballTeamPos)); } catch (_) {}
+  }, [footballTeamPos]);
+  useEffect(() => {
+    try { window.localStorage.setItem('footballTeamSize', String(footballTeamSize)); } catch (_) {}
+  }, [footballTeamSize]);
+
+  // Fetch live NFL players when sport switches to football or scoring changes
+  useEffect(() => {
+    if (!isFootball(sport)) return;
+    const scoring = customFootballScoring ? 'ppr' : footballScoringPreset;
+    setFootballLoading(true);
+    setFootballError('');
+    apiFetch(`/nfl/players?scoring=${scoring}`)
+      .then(data => { setFootballPlayers(data || []); setFootballLoading(false); })
+      .catch(e => {
+        setFootballError(`Failed to load NFL players: ${e.message}`);
+        setFootballLoading(false);
+        // Fall back to mock data so the app is still usable
+        setFootballPlayers(FOOTBALL_PLAYERS);
+      });
+  }, [sport, footballScoringPreset, customFootballScoring]);
+
+  // Recompute football draft engine when player pool or drafted ids change
+  useEffect(() => {
+    if (!isFootball(sport) || footballPlayers === null) return;
+    const activeScoringSettings = customFootballScoring
+      || FOOTBALL_PRESET_LIST.find(p => p.key === footballScoringPreset);
+    const normalizeKey = customFootballScoring ? 'ppr' : footballScoringPreset;
+
+    // Use API data only when FantasyPros rankings are present (adp populated).
+    // Off-season / blocked: fall back to mock data which has real projections.
+    const hasRealRankings = footballPlayers.some(p => p.adp != null && p.adp > 0);
+    const sourceData = hasRealRankings ? footballPlayers : FOOTBALL_PLAYERS;
+
+    const allNormalized = normalizeFootballPlayers(sourceData, normalizeKey);
+    const available = allNormalized.map(p => ({
+      ...p,
+      isDrafted: footballDraftedIds.includes(p.id),
+      projections: {
+        ...p.projections,
+        fantasyPoints: activeScoringSettings
+          ? calculateFantasyPoints(p.stats ?? {}, activeScoringSettings)
+          : (p.nextGen?.projectedPoints ?? p.projections?.fantasyPoints ?? 0),
+      },
+    }));
+    const currentOverallPick = footballDraftedIds.length + 1;
+    const myNextPick = calcNextSnakePick(currentOverallPick + 1, footballTeamPos, footballTeamSize);
+    const result = runDraftEngine({
+      availablePlayers: available.filter(p => !p.isDrafted),
+      draftedPlayers: available.filter(p => p.isDrafted),
+      currentPick: currentOverallPick,
+      nextPick: myNextPick,
+      positions: sportConfig.positions,
+    });
+    setFootballEngine({ players: available, ...result });
+  }, [sport, footballPlayers, footballScoringPreset, customFootballScoring, footballDraftedIds, sportConfig, footballTeamPos, footballTeamSize]);
 
   useEffect(() => { loadState(); loadCurrentTeam(); loadScoringPresets(); loadActiveScoringPreset(); }, [loadState, loadCurrentTeam, loadScoringPresets, loadActiveScoringPreset]);
 
@@ -448,7 +562,24 @@ export default function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <h1>⚾ Fantasy Baseball Draft Assistant</h1>
+        <h1>{sportConfig.emoji} Fantasy Draft Assistant</h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+          <label style={{ fontWeight: 600, color: '#e2e8f0', fontSize: '0.9em' }}>Sport:</label>
+          <select
+            value={sport}
+            onChange={e => {
+              setSport(e.target.value);
+              setActiveTab('draft');
+              setDraftState(null);
+              setFootballDraftedIds([]);
+              setFootballEngine(null);
+            }}
+            style={{ fontSize: '0.95em', padding: '4px 10px', borderRadius: 6 }}
+          >
+            <option value="baseball">⚾ Baseball</option>
+            <option value="football">🏈 Football</option>
+          </select>
+        </div>
       </header>
 
       <nav className="tabs" role="tablist">
@@ -504,7 +635,202 @@ export default function App() {
       </div>
 
       {/* ── DRAFT BOARD TAB ─────────────────────────────────────────────── */}
-      {activeTab === 'draft' && (
+      {activeTab === 'draft' && isFootball(sport) && footballLoading && (
+        <div className="tab-content"><p className="hint">⏳ Loading NFL players from Sleeper + FantasyPros…</p></div>
+      )}
+      {activeTab === 'draft' && isFootball(sport) && footballError && !footballLoading && (
+        <div className="tab-content"><div className="banner error">{footballError} (showing mock data)</div></div>
+      )}
+      {activeTab === 'draft' && isFootball(sport) && !footballLoading && footballEngine && (
+        <div className="tab-content" data-testid="draft-tab-football">
+          {/* Snake pick info bar */}
+          {(() => {
+            const currentOverallPick = footballDraftedIds.length + 1;
+            const myNext = calcNextSnakePick(currentOverallPick + 1, footballTeamPos, footballTeamSize);
+            const onClockSlot = calcTeamForPick(currentOverallPick, footballTeamSize);
+            const isMyTurn = onClockSlot === footballTeamPos;
+            return (
+              <div style={{padding:'8px 14px',background: isMyTurn ? '#f0fff4' : '#f7fafc',border:`1px solid ${isMyTurn ? '#9ae6b4' : '#e2e8f0'}`,borderRadius:8,marginBottom:12,display:'flex',gap:16,flexWrap:'wrap',alignItems:'center',fontSize:'0.88em'}}>
+                <span>📍 <strong>Overall pick:</strong> #{currentOverallPick}</span>
+                <span>🕐 <strong>On the clock:</strong> Team {onClockSlot}{isMyTurn ? ' (You!)' : ''}</span>
+                <span>🎯 <strong>Your slot:</strong> #{footballTeamPos} of {footballTeamSize}</span>
+                {myNext && <span>⏭ <strong>Your next pick:</strong> #{myNext}</span>}
+                {isMyTurn && <span style={{color:'#276749',fontWeight:700}}>✅ You're on the clock!</span>}
+              </div>
+            );
+          })()}
+
+          {/* Search bar */}
+          <div style={{marginBottom:12}}>
+            <input
+              type="text"
+              placeholder="Search players by name, position, or team…"
+              value={footballBoardSearch}
+              onChange={e => setFootballBoardSearch(e.target.value)}
+              style={{width:'100%',padding:'8px 12px',fontSize:'0.95em',borderRadius:6,border:'1px solid #cbd5e0',boxSizing:'border-box'}}
+            />
+          </div>
+          {(() => {
+            const q = footballBoardSearch.trim().toLowerCase();
+            const available = footballEngine.players.filter(p => !p.isDrafted);
+
+            // Sort the available pool based on selected column
+            const sortFn = (() => {
+              const { col, dir } = footballBoardSort;
+              const d = dir === 'asc' ? 1 : -1;
+              if (col === 'vbd')  return (a, b) => d * ((a.vbd ?? -1) - (b.vbd ?? -1));
+              if (col === 'pts')  return (a, b) => d * ((a.projections?.fantasyPoints ?? 0) - (b.projections?.fantasyPoints ?? 0));
+              if (col === 'adp')  return (a, b) => d * ((a.adp ?? 999) - (b.adp ?? 999));
+              return () => 0;
+            })();
+
+            const sorted = [...available].sort(sortFn);
+            const searchResults = q
+              ? sorted.filter(p =>
+                  p.name.toLowerCase().includes(q) ||
+                  p.position.toLowerCase().includes(q) ||
+                  p.team.toLowerCase().includes(q)
+                ).slice(0, 20)
+              : null;
+            const rows = searchResults ?? sorted.slice(0, 10);
+            const title = searchResults ? `Search Results (${rows.length})` : '🏈 Top 10 Available';
+
+            const sortHeader = (col, label, title) => {
+              const active = footballBoardSort.col === col;
+              const arrow = active ? (footballBoardSort.dir === 'desc' ? ' ↓' : ' ↑') : '';
+              return (
+                <th key={col}
+                  title={title}
+                  style={{cursor:'pointer', userSelect:'none', color: active ? '#2b6cb0' : undefined}}
+                  onClick={() => setFootballBoardSort(s =>
+                    s.col === col ? { col, dir: s.dir === 'desc' ? 'asc' : 'desc' } : { col, dir: col === 'adp' ? 'asc' : 'desc' }
+                  )}>
+                  {label}{arrow}
+                </th>
+              );
+            };
+
+            return (
+              <section className="card">
+                <h3>{title}</h3>
+                <div className="data-table-wrapper">
+                  <table className="data-table">
+                    <thead><tr>
+                      <th>#</th><th>Player</th><th>Pos</th><th>Pos Rank</th><th>Team</th>
+                      {sortHeader('vbd', 'VBD', 'Value Over Replacement — positional scarcity-adjusted rank')}
+                      {sortHeader('pts', 'Proj Pts', 'Projected fantasy points')}
+                      {sortHeader('adp', 'ADP', 'Average Draft Position — click to sort by when players typically go')}
+                      <th></th>
+                    </tr></thead>
+                    <tbody>
+                      {rows.map((p, i) => (
+                        <tr key={p.id}>
+                          <td className="pick-num">#{i+1}</td>
+                          <td><strong>{p.name}</strong></td>
+                          <td><span className="badge">{p.position}</span></td>
+                          <td style={{color:'#4a5568',fontWeight:600}}>
+                            {p.nextGen?.posRank ? `${p.position}${p.nextGen.posRank}` : '—'}
+                          </td>
+                          <td>{p.team}</td>
+                          <td style={{fontWeight:600,color: footballBoardSort.col === 'vbd' ? '#2b6cb0' : undefined}}>{p.vbd != null ? p.vbd.toFixed(1) : '—'}</td>
+                          <td style={{fontWeight: footballBoardSort.col === 'pts' ? 600 : undefined}}>{p.projections.fantasyPoints.toFixed(1)}</td>
+                          <td style={{fontWeight: footballBoardSort.col === 'adp' ? 600 : undefined}}>{p.adp ?? '—'}</td>
+                          <td>
+                            <button className="btn-primary" style={{padding:'4px 10px',fontSize:'0.85em'}}
+                              onClick={() => { setFootballDraftedIds(ids => [...ids, p.id]); setFootballBoardSearch(''); }}>
+                              Draft
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            );
+          })()}
+
+          <section className="card">
+            <h3>Recommendations</h3>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(280px,1fr))',gap:16}}>
+              {[
+                {label:'🏆 Best Pick', players: footballEngine.bestPick, subtitle:'Highest VBD — value over replacement player', extraCol: p => p.vbd != null ? `VBD ${p.vbd.toFixed(0)}` : null},
+                {label:'💎 Best Value', players: footballEngine.bestValue, subtitle:'ADP higher than rank (falling)', extraCol: p => `+${(p.valueScore??0).toFixed(1)} val`},
+                {label:'⏰ Won\'t Make It Back', players: footballEngine.wontMakeItBack, subtitle:'Gone before your next pick'},
+                {label:'🚀 Upside Pick', players: footballEngine.upsidePick, subtitle:'Breakout potential via analytics', extraCol: p => `${(p.breakoutScore??0).toFixed(1)} brk`},
+              ].map(({label, players, subtitle, extraCol}) => (
+                <div key={label} style={{background:'#f7fafc',borderRadius:8,padding:12,border:'1px solid #e2e8f0'}}>
+                  <h4 style={{margin:'0 0 4px'}}>{label}</h4>
+                  <p style={{margin:'0 0 8px',fontSize:'0.8em',color:'#718096'}}>{subtitle}</p>
+                  {players.length === 0
+                    ? <p style={{color:'#a0aec0',fontSize:'0.85em'}}>—</p>
+                    : players.map(p => (
+                      <div key={p.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+                        <span>
+                          <span className="badge">{p.position}</span>
+                          {p.nextGen?.posRank && (
+                            <span style={{fontSize:'0.75em',color:'#4a5568',fontWeight:600,marginLeft:2}}>
+                              {p.position}{p.nextGen.posRank}
+                            </span>
+                          )}{' '}
+                          <strong>{p.name}</strong>{' '}
+                          <span style={{color:'#718096',fontSize:'0.8em'}}>{p.team}</span>
+                        </span>
+                        <span style={{display:'flex',gap:6,alignItems:'center',fontSize:'0.82em',color:'#4a5568'}}>
+                          {extraCol && <span style={{color:'#38a169'}}>{extraCol(p)}</span>}
+                          <span>{p.projections.fantasyPoints.toFixed(1)} pts</span>
+                          <button className="btn-primary" style={{padding:'2px 8px',fontSize:'0.8em'}}
+                            onClick={() => setFootballDraftedIds(ids => [...ids, p.id])}>
+                            Draft
+                          </button>
+                        </span>
+                      </div>
+                    ))
+                  }
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {sportConfig.positions.map(pos => (
+            footballEngine.topByPosition[pos]?.length > 0 && (
+              <section key={pos} className="card" style={{marginBottom:8}}>
+                <h4 style={{marginBottom:8}}>Top {pos}s</h4>
+                <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+                  {footballEngine.topByPosition[pos].map(p => (
+                    <div key={p.id} style={{background:'#edf2f7',borderRadius:6,padding:'6px 10px',fontSize:'0.85em'}}>
+                      <strong>{p.name}</strong> <span style={{color:'#718096'}}>{p.team}</span>{' '}
+                      <span style={{color:'#2d3748'}}>{p.projections.fantasyPoints.toFixed(1)} pts</span>{' '}
+                      <button className="btn-primary" style={{padding:'2px 6px',fontSize:'0.78em',marginLeft:4}}
+                        onClick={() => setFootballDraftedIds(ids => [...ids, p.id])}>+</button>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )
+          ))}
+
+          <section className="card">
+            <h4>Drafted Players ({footballDraftedIds.length})</h4>
+            {footballDraftedIds.length === 0
+              ? <p className="hint">No players drafted yet.</p>
+              : <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+                  {footballEngine.players
+                    .filter(p => footballDraftedIds.includes(p.id))
+                    .map(p => (
+                      <span key={p.id} style={{background:'#fed7d7',borderRadius:4,padding:'3px 8px',fontSize:'0.82em'}}>
+                        <span className="badge">{p.position}</span> {p.name}
+                        <button style={{marginLeft:4,background:'none',border:'none',cursor:'pointer',color:'#c53030'}}
+                          onClick={() => setFootballDraftedIds(ids => ids.filter(id => id !== p.id))}>✕</button>
+                      </span>
+                    ))}
+                </div>
+            }
+          </section>
+        </div>
+      )}
+
+      {activeTab === 'draft' && !isFootball(sport) && (
         <div className="tab-content" data-testid="draft-tab">
 
           {currentTeam && draftState ? (
@@ -628,8 +954,148 @@ export default function App() {
         </div>
       )}
 
-      {/* ── MY PICKS / RECOMMENDATIONS TAB ──────────────────────────────── */}
-      {activeTab === 'recs' && (
+      {/* ── MY PICKS TAB — FOOTBALL ─────────────────────────────────────── */}
+      {activeTab === 'recs' && isFootball(sport) && (
+        <div className="tab-content" data-testid="recs-tab-football">
+          {!footballEngine ? (
+            <p className="hint">Loading football data…</p>
+          ) : (
+            <>
+              {(() => {
+                const currentOverallPick = footballDraftedIds.length + 1;
+                const onClockSlot = calcTeamForPick(currentOverallPick, footballTeamSize);
+                const isMyTurn = onClockSlot === footballTeamPos;
+                const myNextPick = calcNextSnakePick(currentOverallPick + 1, footballTeamPos, footballTeamSize);
+
+                // Build roster slots: assign drafted players to position slots greedily
+                const drafted = footballEngine.players.filter(p => footballDraftedIds.includes(p.id));
+                const byPos = {};
+                drafted.forEach(p => { byPos[p.position] = [...(byPos[p.position] || []), p]; });
+                const req = sportConfig.rosterRequirements;
+                const flexPositions = sportConfig.flexPositions ?? [];
+                const slots = [];
+                for (const [pos, count] of Object.entries(req)) {
+                  if (pos === 'FLEX') continue;
+                  for (let i = 0; i < count; i++) {
+                    const player = byPos[pos]?.shift() ?? null;
+                    slots.push({ label: count > 1 ? `${pos} ${i+1}` : pos, pos, player });
+                  }
+                }
+                if (req.FLEX) {
+                  for (let i = 0; i < req.FLEX; i++) {
+                    let flexPlayer = null;
+                    for (const fp of flexPositions) {
+                      if (byPos[fp]?.length) { flexPlayer = byPos[fp].shift(); break; }
+                    }
+                    slots.push({ label: 'FLEX', pos: 'FLEX', player: flexPlayer });
+                  }
+                }
+                // Bench: remaining players
+                const bench = Object.values(byPos).flat();
+
+                return (
+                  <>
+                    {/* Turn indicator */}
+                    <div style={{padding:'8px 14px',background: isMyTurn ? '#f0fff4' : '#f7fafc',border:`1px solid ${isMyTurn ? '#9ae6b4' : '#e2e8f0'}`,borderRadius:8,marginBottom:12,display:'flex',gap:16,flexWrap:'wrap',alignItems:'center',fontSize:'0.88em'}}>
+                      <span>📍 <strong>Overall pick:</strong> #{currentOverallPick}</span>
+                      <span>🕐 <strong>On the clock:</strong> Team {onClockSlot}{isMyTurn ? ' (You!)' : ''}</span>
+                      {!isMyTurn && myNextPick && <span>⏭ <strong>Your next pick:</strong> #{myNextPick}</span>}
+                      {isMyTurn && <span style={{color:'#276749',fontWeight:700}}>✅ Your pick — draft a player below!</span>}
+                      {!isMyTurn && <span style={{color:'#c05621',fontWeight:600}}>Waiting for Team {onClockSlot}…</span>}
+                    </div>
+
+                    {/* Roster slots table */}
+                    <section className="card">
+                      <h3>🎯 My Roster</h3>
+                      <table className="data-table" style={{marginBottom: bench.length ? 12 : 0}}>
+                        <thead><tr><th>Slot</th><th>Player</th><th>Team</th><th>Proj Pts</th><th></th></tr></thead>
+                        <tbody>
+                          {slots.map((slot, i) => (
+                            <tr key={i} style={{background: slot.player ? undefined : '#fffaf0'}}>
+                              <td><span className="badge" style={{background: slot.player ? undefined : '#fed7aa', color: slot.player ? undefined : '#7c2d12'}}>{slot.label}</span></td>
+                              <td>{slot.player ? <strong>{slot.player.name}</strong> : <span style={{color:'#a0aec0',fontStyle:'italic'}}>Empty</span>}</td>
+                              <td>{slot.player?.team ?? '—'}</td>
+                              <td>{slot.player ? slot.player.projections.fantasyPoints.toFixed(0) : '—'}</td>
+                              <td>{slot.player && (
+                                <button style={{background:'none',border:'none',cursor:'pointer',color:'#c53030',fontSize:'0.85em'}}
+                                  onClick={() => setFootballDraftedIds(ids => ids.filter(id => id !== slot.player.id))}>✕</button>
+                              )}</td>
+                            </tr>
+                          ))}
+                          {bench.map((p, i) => (
+                            <tr key={`bench-${p.id}`} style={{background:'#f7fafc'}}>
+                              <td><span className="badge" style={{background:'#e2e8f0',color:'#4a5568'}}>BN {i+1}</span></td>
+                              <td><strong>{p.name}</strong></td>
+                              <td>{p.team}</td>
+                              <td>{p.projections.fantasyPoints.toFixed(0)}</td>
+                              <td>
+                                <button style={{background:'none',border:'none',cursor:'pointer',color:'#c53030',fontSize:'0.85em'}}
+                                  onClick={() => setFootballDraftedIds(ids => ids.filter(id => id !== p.id))}>✕</button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </section>
+
+                    {/* Available players — only allow drafting on my turn */}
+                    <section className="card">
+                      <h3>Top 10 Available {!isMyTurn && <span style={{fontSize:'0.8em',color:'#a0aec0',fontWeight:400}}>(draft unlocks on your pick)</span>}</h3>
+                      <div className="data-table-wrapper">
+                        <table className="data-table">
+                          <thead><tr><th>#</th><th>Player</th><th>Pos</th><th>Team</th><th>VBD</th><th>Proj Pts</th><th>ADP</th><th></th></tr></thead>
+                          <tbody>
+                            {footballEngine.top10.map((p, i) => (
+                              <tr key={p.id}>
+                                <td className="pick-num">#{i+1}</td>
+                                <td><strong>{p.name}</strong></td>
+                                <td><span className="badge">{p.position}</span></td>
+                                <td>{p.team}</td>
+                                <td style={{fontWeight:600,color:'#2b6cb0'}}>{p.vbd != null ? p.vbd.toFixed(0) : '—'}</td>
+                                <td>{p.projections.fantasyPoints.toFixed(1)}</td>
+                                <td>{p.adp ?? '—'}</td>
+                                <td>
+                                  <button className="btn-primary" style={{padding:'4px 10px',fontSize:'0.85em'}}
+                                    disabled={!isMyTurn}
+                                    title={!isMyTurn ? `Waiting for Team ${onClockSlot} to pick` : 'Draft this player'}
+                                    onClick={() => setFootballDraftedIds(ids => [...ids, p.id])}>
+                                    Draft
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </section>
+                  </>
+                );
+              })()}
+
+              {footballEngine.wontMakeItBack.length > 0 && (
+                <section className="card">
+                  <h3>⏰ Won't Make It Back</h3>
+                  <p className="hint" style={{marginTop:0}}>Gone before your next pick (#{calcNextSnakePick(footballDraftedIds.length + 2, footballTeamPos, footballTeamSize)})</p>
+                  <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+                    {footballEngine.wontMakeItBack.map(p => (
+                      <div key={p.id} style={{background:'#fff5f5',border:'1px solid #feb2b2',borderRadius:6,padding:'6px 10px',fontSize:'0.85em'}}>
+                        <span className="badge">{p.position}</span> <strong>{p.name}</strong>{' '}
+                        <span style={{color:'#718096'}}>{p.team}</span>{' '}
+                        <span style={{color:'#e53e3e',fontWeight:600}}>ADP {p.adp}</span>
+                        <button className="btn-primary" style={{marginLeft:6,padding:'2px 8px',fontSize:'0.78em'}}
+                          onClick={() => setFootballDraftedIds(ids => [...ids, p.id])}>Draft</button>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── MY PICKS / RECOMMENDATIONS TAB — BASEBALL ───────────────────── */}
+      {activeTab === 'recs' && !isFootball(sport) && (
         <div className="tab-content" data-testid="recs-tab">
           {!draftState ? (
             <p className="hint">Draft not initialized yet.</p>
@@ -807,7 +1273,7 @@ export default function App() {
                               <input
                                 type="text"
                                 className="keeper-player-input"
-                                placeholder="e.g. Mike Trout"
+                                placeholder={isFootball(sport) ? 'e.g. Josh Allen' : 'e.g. Mike Trout'}
                                 value={k.search}
                                 data-testid={`keeper-player-${ti}-${ki}`}
                                 onChange={e => searchKeeperPlayer(ti, ki, e.target.value)}
@@ -861,8 +1327,169 @@ export default function App() {
         </div>
       )}
 
+      {/* ── DRAFTED TAB ─────────────────────────────────────────────────── */}
+      {activeTab === 'drafted' && (
+        <div className="tab-content" data-testid="drafted-tab">
+          {!draftState ? (
+            <p className="hint">Draft not initialized yet.</p>
+          ) : (
+            <>
+              {draftedKeepers.length > 0 && (
+                <section className="card">
+                  <h3>🔒 Keepers</h3>
+                  <div className="data-table-wrapper">
+                    <table className="data-table">
+                      <thead><tr><th>Player</th><th>Pos</th><th>Team</th><th>Kept In Rd</th><th>Kept By</th></tr></thead>
+                      <tbody>
+                        {draftedKeepers.map((entry, i) => (
+                          <tr key={i}>
+                            <td><strong>{entry.player.name}</strong></td>
+                            <td><span className="badge">{entry.player.position}</span></td>
+                            <td>{entry.player.team}</td>
+                            <td>{entry.round}</td>
+                            <td>{entry.teamName}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              )}
+              <section className="card">
+                <h3>📜 Draft Picks</h3>
+                {draftedPicks.length === 0
+                  ? <p className="hint">No picks yet.</p>
+                  : (
+                    <div className="data-table-wrapper">
+                      <table className="data-table">
+                        <thead><tr><th>#</th><th>Rd</th><th>Player</th><th>Pos</th><th>Team</th><th>Picked By</th></tr></thead>
+                        <tbody>
+                          {draftedPicks.map(entry => (
+                            <tr key={entry.player.id}>
+                              <td className="pick-num">#{entry.overall}</td>
+                              <td>{entry.round}</td>
+                              <td><strong>{entry.player.name}</strong></td>
+                              <td><span className="badge">{entry.player.position}</span></td>
+                              <td>{entry.player.team}</td>
+                              <td>{entry.teamName}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )
+                }
+              </section>
+            </>
+          )}
+        </div>
+      )}
+
       {/* ── SETTINGS TAB ────────────────────────────────────────────────── */}
-      {activeTab === 'settings' && (
+      {activeTab === 'settings' && isFootball(sport) && (
+        <div className="tab-content" data-testid="settings-tab-football">
+          <section className="card">
+            <h3>⚙️ Football Scoring Settings</h3>
+            <p className="hint">Select a scoring mode or upload a custom JSON configuration.</p>
+            <div style={{marginBottom:16,display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+              <button className="btn-ping" onClick={async () => {
+                try {
+                  await apiFetch('/nfl/refresh', {method:'POST'});
+                  setStatusMsg('✅ NFL cache cleared — reload Draft Board to re-fetch.');
+                } catch(e) { setErrorMsg(`Refresh failed: ${e.message}`); }
+              }}>🔄 Refresh NFL Data</button>
+              <span style={{fontSize:'0.82em',color:'#718096'}}>Re-fetches from Sleeper + FantasyPros</span>
+            </div>
+
+            <div style={{marginBottom:20}}>
+              <label style={{display:'block',marginBottom:8,fontWeight:'bold'}}>Snake Draft Position:</label>
+              <div style={{display:'flex',gap:20,flexWrap:'wrap',alignItems:'center'}}>
+                <div style={{display:'flex',alignItems:'center',gap:8}}>
+                  <label style={{fontSize:'0.9em',color:'#4a5568'}}>Your pick #:</label>
+                  <input
+                    type="number" min="1" max={footballTeamSize}
+                    value={footballTeamPos}
+                    onChange={e => setFootballTeamPos(Math.min(Math.max(1, Number(e.target.value)), footballTeamSize))}
+                    style={{width:60,padding:'4px 8px',borderRadius:6,border:'1px solid #cbd5e0',fontSize:'1em'}}
+                  />
+                  <span style={{color:'#718096',fontSize:'0.85em'}}>of {footballTeamSize}</span>
+                </div>
+                <div style={{display:'flex',alignItems:'center',gap:8}}>
+                  <label style={{fontSize:'0.9em',color:'#4a5568'}}>Teams in league:</label>
+                  <input
+                    type="number" min="8" max="20"
+                    value={footballTeamSize}
+                    onChange={e => setFootballTeamSize(Math.max(8, Number(e.target.value)))}
+                    style={{width:60,padding:'4px 8px',borderRadius:6,border:'1px solid #cbd5e0',fontSize:'1em'}}
+                  />
+                </div>
+              </div>
+              <p className="hint" style={{marginTop:6,fontSize:'0.82em'}}>
+                Used to calculate "Won't Make It Back" — players likely gone before your next snake pick.
+              </p>
+            </div>
+
+            <div style={{marginBottom:20}}>
+              <label style={{display:'block',marginBottom:8,fontWeight:'bold'}}>Scoring Mode:</label>
+              <select
+                value={footballScoringPreset}
+                onChange={e => { setFootballScoringPreset(e.target.value); setCustomFootballScoring(null); setCustomScoringJson(''); setCustomScoringError(''); }}
+                style={{fontSize:'1em',padding:'8px 12px',borderRadius:6,minWidth:260}}
+              >
+                {FOOTBALL_PRESET_LIST.map(p => (
+                  <option key={p.key} value={p.key}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{marginBottom:20}}>
+              <h4 style={{marginBottom:8}}>Custom JSON Scoring</h4>
+              <p className="hint" style={{marginBottom:6}}>Paste a JSON object with scoring weights to override the preset above.</p>
+              <textarea
+                rows={6}
+                style={{width:'100%',fontFamily:'monospace',fontSize:'0.85em',padding:8,borderRadius:6,border:'1px solid #cbd5e0',boxSizing:'border-box'}}
+                placeholder={'{\n  "passYards": 0.04,\n  "passTD": 4,\n  "rushYards": 0.1,\n  "rushTD": 6,\n  "receptions": 1\n}'}
+                value={customScoringJson}
+                onChange={e => setCustomScoringJson(e.target.value)}
+              />
+              {customScoringError && <p style={{color:'#e53e3e',fontSize:'0.85em',margin:'4px 0'}}>{customScoringError}</p>}
+              <button className="btn-primary" style={{marginTop:8}} onClick={() => {
+                try {
+                  const parsed = JSON.parse(customScoringJson);
+                  const valid = CUSTOM_SCORING_KEYS.some(k => parsed[k] !== undefined);
+                  if (!valid) throw new Error('No recognized scoring keys found.');
+                  setCustomFootballScoring(parsed);
+                  setCustomScoringError('');
+                  setStatusMsg('✅ Custom football scoring applied!');
+                } catch(e) {
+                  setCustomScoringError(`Invalid JSON: ${e.message}`);
+                }
+              }}>Apply Custom Scoring</button>
+              {customFootballScoring && (
+                <button style={{marginTop:8,marginLeft:8,background:'none',border:'1px solid #cbd5e0',borderRadius:6,padding:'6px 12px',cursor:'pointer'}}
+                  onClick={() => { setCustomFootballScoring(null); setCustomScoringJson(''); setCustomScoringError(''); }}>
+                  Clear Custom
+                </button>
+              )}
+            </div>
+
+            {customFootballScoring && (
+              <div style={{padding:12,background:'#f0fff4',borderRadius:8,border:'1px solid #9ae6b4',marginBottom:16}}>
+                <strong>Active: Custom Scoring</strong>
+                <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(130px,1fr))',gap:6,marginTop:8}}>
+                  {Object.entries(customFootballScoring).map(([k,v]) => (
+                    <div key={k} style={{background:'#fff',borderRadius:4,padding:'4px 8px',fontSize:'0.82em'}}>
+                      <strong>{k}</strong>: {v}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
+        </div>
+      )}
+
+      {activeTab === 'settings' && !isFootball(sport) && (
         <div className="tab-content" data-testid="settings-tab">
           <section className="card">
             <h3>⚙️ Scoring Settings</h3>

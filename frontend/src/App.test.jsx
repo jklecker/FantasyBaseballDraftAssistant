@@ -32,7 +32,7 @@ function mockFetch(handlers) {
 describe('App renders', () => {
   test('shows the app heading', () => {
     render(<App />);
-    expect(screen.getByText(/Fantasy Baseball Draft Assistant/i)).toBeInTheDocument();
+    expect(screen.getByText(/Fantasy Draft Assistant/i)).toBeInTheDocument();
   });
 
   test('Draft Board tab is active by default', () => {

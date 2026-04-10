@@ -6,11 +6,12 @@ export default defineConfig({
     react(),
   ],
   server: {
-    port: 3000,
+    port: 5173,
     proxy: {
       '/draft':   { target: 'http://localhost:8080', changeOrigin: true },
       '/players': { target: 'http://localhost:8080', changeOrigin: true },
       '/ping':    { target: 'http://localhost:8080', changeOrigin: true },
+      '/nfl':     { target: 'http://localhost:8080', changeOrigin: true },
     },
   },
   build: {

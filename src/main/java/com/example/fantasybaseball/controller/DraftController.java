@@ -9,6 +9,7 @@ import com.example.fantasybaseball.model.Player;
 import com.example.fantasybaseball.model.Team;
 import com.example.fantasybaseball.model.TeamStats;
 import com.example.fantasybaseball.service.DraftService;
+import com.example.fantasybaseball.service.FootballPlayerService;
 import com.example.fantasybaseball.service.PlayerPoolService;
 import com.example.fantasybaseball.service.ScoringService;
 import com.example.fantasybaseball.util.FuzzyMatcher;
@@ -39,6 +40,9 @@ public class DraftController {
 
     @Autowired
     private ScoringConfigLoader scoringConfigLoader;
+
+    @Autowired
+    private FootballPlayerService footballPlayerService;
 
     /**
      * Initialize the draft with a list of team names and snake-order flag.
@@ -95,9 +99,12 @@ public class DraftController {
      */
     @PostMapping("/auto-initialize")
     public ResponseEntity<DraftState> autoInitialize(
-            @RequestParam(defaultValue = "12") int numTeams) {
+            @RequestParam(defaultValue = "12") int numTeams,
+            @RequestParam(defaultValue = "baseball") String sport) {
         if (!draftService.isDraftInitialized()) {
-            List<Player> players = playerPoolService.getAllPlayers();
+            List<Player> players = "football".equalsIgnoreCase(sport)
+                    ? footballPlayerService.getPlayers()
+                    : playerPoolService.getAllPlayers();
             List<Team> teams = new ArrayList<>();
             for (int i = 1; i <= numTeams; i++) {
                 Team t = new Team();

@@ -20,6 +20,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web:3.2.4")
     // Thymeleaf removed — React SPA is served as static resources from /static
     implementation("com.opencsv:opencsv:5.9")
+    implementation("org.jsoup:jsoup:1.17.2")
     implementation("com.fasterxml.jackson.core:jackson-databind:2.16.1")
     compileOnly("org.projectlombok:lombok:1.18.30")
     annotationProcessor("org.projectlombok:lombok:1.18.30")
@@ -34,5 +35,11 @@ dependencies {
 // automatically from src/main/resources/ — no extra configuration needed.
 
 tasks.test {
-    useJUnitPlatform()
+    useJUnitPlatform {
+        // Exclude live-API integration tests from the default run.
+        // Run them explicitly: ./gradlew test -Dgroups=integration
+        if (System.getProperty("groups") != "integration") {
+            excludeTags("integration")
+        }
+    }
 }
