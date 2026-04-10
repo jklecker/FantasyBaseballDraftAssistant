@@ -363,6 +363,7 @@ export default function App() {
       currentPick: currentOverallPick,
       nextPick: myNextPick,
       positions: sportConfig.positions,
+      teamSize: footballTeamSize,
     });
     setFootballEngine({ players: available, ...result });
   }, [sport, footballPlayers, footballScoringPreset, customFootballScoring, footballDraftedIds, sportConfig, footballTeamPos, footballTeamSize]);
@@ -574,6 +575,7 @@ export default function App() {
               setDraftState(null);
               setFootballDraftedIds([]);
               setFootballEngine(null);
+              setFootballPlayers(null);
               if (newSport !== 'football') {
                 loadState();
                 loadCurrentTeam();

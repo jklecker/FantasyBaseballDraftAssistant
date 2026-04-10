@@ -68,7 +68,7 @@ export function getTopPlayersByPosition(players, position, limit = 5) {
 /**
  * Main draft engine.
  */
-export function runDraftEngine({ availablePlayers, draftedPlayers = [], currentPick = 1, nextPick = null, positions = [] }) {
+export function runDraftEngine({ availablePlayers, draftedPlayers = [], currentPick = 1, nextPick = null, positions = [], teamSize = 12 }) {
   const pool = availablePlayers.filter(p => !p.isDrafted);
 
   // 1. Top 10 available overall — ranked by VBD (positional scarcity-adjusted)
@@ -88,11 +88,13 @@ export function runDraftEngine({ availablePlayers, draftedPlayers = [], currentP
     .sort((a, b) => primaryScore(b) - primaryScore(a))
     .slice(0, 3);
 
-  // 3B. Best Value — players available later than their VBD rank suggests.
-  // Filter to players with real VBD > 0 first: K/DST rank last by VBD but have high ADPs,
-  // which would make them look like huge "value" — they're not, they're just late-round picks.
+  // 3B. Best Value — players available later than their VBD rank suggests,
+  // scoped to within ~2 rounds of the current pick so round-1 picks don't surface
+  // round-10 sleepers as "value" (e.g. Justin Fields at ADP 120 is irrelevant at pick 1).
+  const valueWindow = currentPick + teamSize * 2;
   const bestValue = [...pool]
     .filter(p => (p.vbd ?? 0) > 0)
+    .filter(p => (p.adp ?? 999) <= valueWindow)
     .map(p => ({ ...p, _valueScore: computeValueScore(p) }))
     .filter(p => p._valueScore > 5)
     .sort((a, b) => b._valueScore - a._valueScore)
