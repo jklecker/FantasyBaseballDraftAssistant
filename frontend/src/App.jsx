@@ -568,11 +568,16 @@ export default function App() {
           <select
             value={sport}
             onChange={e => {
-              setSport(e.target.value);
+              const newSport = e.target.value;
+              setSport(newSport);
               setActiveTab('draft');
               setDraftState(null);
               setFootballDraftedIds([]);
               setFootballEngine(null);
+              if (newSport !== 'football') {
+                loadState();
+                loadCurrentTeam();
+              }
             }}
             style={{ fontSize: '0.95em', padding: '4px 10px', borderRadius: 6 }}
           >
